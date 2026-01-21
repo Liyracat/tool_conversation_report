@@ -1,0 +1,388 @@
+0) 共通ルール
+ページング
+・クエリ：limit（default 50, max 200）, offset（default 0）
+
+ソート
+・クエリ：sort_by（enum）
+・クエリ：sort_dir（asc|desc）
+
+時刻
+・文字列ISO8601（例：2026-01-21T19:00:00+09:00）
+
+1) Cards（一覧・詳細・編集）
+1-1. カード検索（一覧）
+GET /api/cards
+
+Query
+・q : str（contents 部分一致。FTSならそこに委譲）
+・visibility : normal|hidden|archived（default normal）
+・speaker_id : int（optional）
+・role_major_id : int（optional）
+・role_id : int（optional）
+・role_unset : bool（optional。trueなら card_role_id IS NULL）
+・thread_id : str（optional）
+・date_from : str ISO8601（optional, conversation_at）
+・date_to : str ISO8601（optional）
+・sort_by : conversation_at|created_at|card_role_confidence|updated_at
+・sort_dir : asc|desc
+・limit, offset
+
+Response 200
+{
+  "total": 1234,
+  "items": [
+    {
+      "card_id": 10,
+      "thread_id": "uuid",
+      "message_id": 12,
+      "text_id": 3,
+      "split_version": 1,
+      "speaker_id": 1,
+      "speaker_name": "リラ",
+      "conversation_at": "2026-01-21T19:00:00+09:00",
+      "visibility": "normal",
+      "card_role_id": 301,
+      "card_role_name": "仮説",
+      "card_role_major_name": "Hypothesis",
+      "card_role_confidence": 0.72,
+      "contents": "..."
+    }
+  ]
+}
+
+1-2. カード詳細
+GET /api/cards/{card_id}
+
+Query
+・context_prev_messages : int（default 2）
+・context_next_messages : int（default 3）
+
+Response 200
+{
+  "card": {
+    "card_id": 10,
+    "thread_id": "uuid",
+    "message_id": 12,
+    "text_id": 3,
+    "split_version": 1,
+    "speaker_id": 1,
+    "speaker_name": "リラ",
+    "conversation_at": "2026-01-21T19:00:00+09:00",
+    "visibility": "normal",
+    "is_edited": 0,
+    "card_role_id": 301,
+    "card_role_name": "仮説",
+    "card_role_major_name": "Hypothesis",
+    "card_role_confidence": 0.72,
+    "contents": "..."
+  },
+  "context_messages": {
+    "prev": [
+      { "card_id": 7, "text_id": 1, "contents": "...", "card_role_name": "相槌" },
+      { "card_id": 8, "text_id": 2, "contents": "...", "card_role_name": "断定" }
+    ],
+    "next": [
+      { "card_id": 11, "text_id": 4, "contents": "...", "card_role_name": "理由" }
+    ]
+  }
+}
+
+※ context は「同一 thread_id + message_id + split_version の cards を text_id順」に並べて前後を返すイメージ。
+
+1-3. カード更新（単一レコード編集）
+PATCH /api/cards/{card_id}
+
+Body（編集可能）
+{
+  "contents": "修正後",
+  "visibility": "hidden",
+  "card_role_id": 401
+}
+
+Behavior
+・contents変更なら is_edited=1
+・roleを手で変えるなら card_role_confidence=NULL にしてもOK（運用次第）
+・updated_at更新
+
+Response 200
+{ "card_id": 10 }
+
+1-4. ロール再推定（単体）
+POST /api/cards/{card_id}/role:recompute
+
+Behavior
+・card_role_id=NULL, card_role_confidence=NULL にしてからキュー投入
+・非同期実行（UIはすぐ戻る）
+
+Response 202
+{ "queued": true }
+
+1-5. ロール未設定に一括付与（ボタン用）
+POST /api/cards/roles:backfill
+
+Body
+{
+  "thread_id": "uuid",
+  "visibility": "normal",
+  "limit": 200
+}
+
+Response 202
+{ "queued_count": 120 }
+
+1-6. ロール付与ステータス（簡易）
+GET /api/cards/roles:status
+
+Query
+・thread_id（optional）
+・visibility（optional）
+
+Response 200
+{
+  "pending": 12,
+  "failed": 0,
+  "last_updated_at": "2026-01-21T19:05:00+09:00"
+}
+
+※ 「失敗ログはいらない」前提なので failed は “失敗数” だけ返す想定（内部で失敗カウントは持つ必要あり。後述の実装メモ参照）
+
+2) Message編集（同一 message_id を束で扱う）
+2-1. メッセージ内 cards 一覧
+GET /api/threads/{thread_id}/messages/{message_id}
+
+Query
+・split_version（default 1）
+
+Response 200
+{
+  "thread_id": "uuid",
+  "message_id": 12,
+  "split_version": 1,
+  "cards": [
+    { "card_id": 7, "text_id": 1, "contents": "...", "card_role_name": "相槌" },
+    { "card_id": 8, "text_id": 2, "contents": "...", "card_role_name": "断定" }
+  ]
+}
+
+2-2. 上のカードへ統合（下を削除）
+POST /api/cards/{card_id}/merge-into-previous
+
+Behavior（仕様通り）
+・対象は「同一 thread_id + message_id + split_version」内で text_id が1つ小さい“直前のカード”へ統合
+・前カード.contents = 前 + "\n" + 今
+・今カード物理削除
+・前カード is_edited=1, updated_at更新
+・前カード roleを NULL に戻す（role_id/confidence共にNULL）
+・前カード ロール再推定をキュー投入（任意：ここは同期にしないのが無難）
+
+Response 200
+{ "merged_into_card_id": 8, "deleted_card_id": 9 }
+
+※ “直前”の定義は「text_id順の直前」。欠番があってもOK。
+
+2-3. カード削除
+DELETE /api/cards/{card_id}
+
+Response 204（bodyなし）
+
+3) Links（card_links）表示・編集・削除（詳細画面用）
+3-1. カードの関連一覧（kind別タブ用）
+GET /api/cards/{card_id}/links
+
+Query
+・kind : str（optional：supports 等）
+・sort_by : confidence|conversation_at
+・sort_dir : asc|desc
+・limit, offset
+
+Response 200
+{
+  "counts_by_kind": {
+    "supports": 3,
+    "contradicts": 1,
+    "refines": 0,
+    "derived_from": 2,
+    "example_of": 0,
+    "depends_on": 1
+  },
+  "items": [
+    {
+      "link_id": 55,
+      "link_kind_name": "supports",
+      "confidence": 0.81,
+      "from_card_id": 10,
+      "to_card_id": 99,
+      "to_card": {
+        "card_id": 99,
+        "card_role_name": "理由",
+        "conversation_at": "2026-01-21T18:50:00+09:00",
+        "contents": "..."
+      }
+    }
+  ]
+}
+
+※ “このカードを起点（from）にする”前提なら、APIも from_card_id = {card_id} で絞る。
+
+3-2. link_kind変更（種別編集のみ）
+PATCH /api/links/{link_id}
+
+Body
+{ "link_kind_id": 3 }
+
+Response 200
+{ "link_id": 55 }
+
+3-3. link削除
+DELETE /api/links/{link_id}
+
+Response 204
+
+4) Import
+4-1. インポート：プレビュー生成（分割のみ）
+POST /api/import/preview
+
+Body
+{
+  "raw_text": "貼り付け本文...",
+  "speaker_id": 1,
+  "conversation_at": "2026-01-21T19:00:00+09:00",
+  "split_version": 1
+}
+
+Response 200
+{
+  "thread_id": "generated-uuid",
+  "message_id": 1,
+  "split_version": 1,
+  "parts": [
+    { "text_id": 1, "contents": "..." },
+    { "text_id": 2, "contents": "..." }
+  ]
+}
+
+※ ここで thread_id を生成して返す想定。
+
+4-2. インポート：プレビューを保存（cards INSERT）
+POST /api/import/commit
+
+Body
+{
+  "thread_id": "uuid",
+  "message_id": 1,
+  "split_version": 1,
+  "speaker_id": 1,
+  "conversation_at": "2026-01-21T19:00:00+09:00",
+  "parts": [
+    { "text_id": 1, "contents": "..." },
+    { "text_id": 2, "contents": "..." }
+  ]
+}
+
+Response 201
+{ "created_card_ids": [101,102], "thread_id": "uuid", "message_id": 1 }
+
+4-3. インポート：ロール付与実行（非同期）
+POST /api/import/{thread_id}/roles:run
+
+Body
+{ "message_id_from": 1, "message_id_to": 1 }
+
+Response 202
+{ "queued": true }
+
+5) Link suggestions（関連付け画面のpool）
+5-1. suggestion生成（組み合わせ保存）
+POST /api/link-suggestions/generate
+
+Body（例：左の親(from)と右の候補(to)）
+{
+  "from_card_ids": [10],
+  "to_card_ids": [99,100,101]
+}
+
+Behavior
+・from×to の直積を作り INSERT OR IGNORE（同一方向は重複スキップ）
+・status=queued
+
+Response 201
+{ "created": 3, "skipped": 0 }
+
+5-2. LLM実行（queuedを処理）
+POST /api/link-suggestions/run
+
+Body
+{ "limit": 50 }
+
+Response 202
+{ "queued": true }
+
+5-3. suggestion一覧（画面下テーブル）
+GET /api/link-suggestions
+
+Query
+・status : queued|processing|success|failed|approved|rejected（optional）
+・from_card_id（optional）
+・to_card_id（optional）
+・limit, offset
+・sort_by : updated_at|created_at|suggested_confidence
+・sort_dir
+
+Response 200
+{
+  "total": 10,
+  "items": [
+    {
+      "suggestion_id": 1,
+      "from_card_id": 10,
+      "to_card_id": 99,
+      "status": "success",
+      "suggested_link_kind_id": 1,
+      "suggested_link_kind_name": "supports",
+      "suggested_confidence": 0.81
+    }
+  ]
+}
+
+5-4. suggestion再実行（failed用）
+POST /api/link-suggestions/{suggestion_id}/rerun
+
+Response 202
+{ "queued": true }
+
+5-5. 承認（card_linksへ保存）
+POST /api/link-suggestions/{suggestion_id}/approve
+
+Body（提案を上書きしたい場合）
+{ "link_kind_id": 3 }
+
+Behavior
+・suggestion.status=approved
+・card_links に INSERT（from_card_id, to_card_id, link_kind_id, confidence=suggested_confidence）
+・expires_at を +7days セット（残す運用の場合）
+
+Response 201
+{ "link_id": 123 }
+
+5-6. 却下
+POST /api/link-suggestions/{suggestion_id}/reject
+
+Behavior
+・status=rejected
+・expires_at = now + 7 days
+
+Response 200
+{ "rejected": true }
+
+5-7. 期限切れ掃除（任意：管理用）
+POST /api/link-suggestions/cleanup
+
+Response 200
+{ "deleted": 42 }
+
+6) Settings CRUD（必要最小）
+GET/POST/PATCH/DELETE /api/speakers
+GET/POST/PATCH/DELETE /api/card-role-major-items
+GET/POST/PATCH/DELETE /api/card-roles
+GET/POST/PATCH/DELETE /api/link-kinds
+GET/POST/PATCH/DELETE /api/meaningless_phrases

@@ -1,0 +1,380 @@
+方針
+・SQLiteなので 直SQL + パラメータが一番読みやすくて速い（特に検索と集計）
+・INSERT OR IGNORE / INSERT ... ON CONFLICT DO UPDATE を多用
+・重要操作（merge / approve）は トランザクションでまとめる
+
+以下、機能ごとにクエリ。
+
+1) Cards一覧検索 GET /api/cards
+1-1 total件数
+SELECT COUNT(1)
+FROM cards c
+LEFT JOIN speakers s ON s.speaker_id = c.speaker_id
+LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
+LEFT JOIN card_role_major_items m ON m.card_role_major_item_id = cr.card_role_major_item_id
+WHERE 1=1
+  AND c.visibility = :visibility
+  -- optional filters
+  AND (:speaker_id IS NULL OR c.speaker_id = :speaker_id)
+  AND (:role_major_id IS NULL OR m.card_role_major_item_id = :role_major_id)
+  AND (:role_id IS NULL OR c.card_role_id = :role_id)
+  AND (:role_unset IS NULL OR (:role_unset = 1 AND c.card_role_id IS NULL))
+  AND (:thread_id IS NULL OR c.thread_id = :thread_id)
+  AND (:date_from IS NULL OR c.conversation_at >= :date_from)
+  AND (:date_to   IS NULL OR c.conversation_at <= :date_to)
+  AND (:q IS NULL OR c.contents LIKE '%' || :q || '%');
+
+1-2 一覧取得（ソート可変）
+ソートはSQL文字列を組み立てる（プレースホルダ不可なので whitelist必須）。
+・sort_by -> c.conversation_at / c.created_at / c.card_role_confidence / c.updated_at
+・sort_dir -> ASC|DESC
+
+SELECT
+  c.card_id, c.thread_id, c.message_id, c.text_id, c.split_version,
+  c.speaker_id, s.speaker_name, c.conversation_at,
+  c.visibility, c.card_role_id,
+  m.major_name AS card_role_major_name,
+  cr.minor_name AS card_role_name,
+  c.card_role_confidence,
+  c.contents
+FROM cards c
+LEFT JOIN speakers s ON s.speaker_id = c.speaker_id
+LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
+LEFT JOIN card_role_major_items m ON m.card_role_major_item_id = cr.card_role_major_item_id
+WHERE 1=1
+  AND c.visibility = :visibility
+  AND (:speaker_id IS NULL OR c.speaker_id = :speaker_id)
+  AND (:role_major_id IS NULL OR m.card_role_major_item_id = :role_major_id)
+  AND (:role_id IS NULL OR c.card_role_id = :role_id)
+  AND (:role_unset IS NULL OR (:role_unset = 1 AND c.card_role_id IS NULL))
+  AND (:thread_id IS NULL OR c.thread_id = :thread_id)
+  AND (:date_from IS NULL OR c.conversation_at >= :date_from)
+  AND (:date_to   IS NULL OR c.conversation_at <= :date_to)
+  AND (:q IS NULL OR c.contents LIKE '%' || :q || '%')
+ORDER BY {SORT_COL} {SORT_DIR}
+LIMIT :limit OFFSET :offset;
+
+※ LIKE '%q%' はインデックス効かないので、将来FTS5に置き換える前提でOK。
+
+2) カード詳細 GET /api/cards/{id}
+2-1 card本体
+SELECT
+  c.*,
+  s.speaker_name,
+  m.major_name AS card_role_major_name,
+  cr.minor_name AS card_role_name
+FROM cards c
+LEFT JOIN speakers s ON s.speaker_id = c.speaker_id
+LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
+LEFT JOIN card_role_major_items m ON m.card_role_major_item_id = cr.card_role_major_item_id
+WHERE c.card_id = :card_id;
+
+2-2 context（同一 thread/message/split の前後）
+前後を「text_id順の近傍」で取る。欠番OK。
+
+-- まず基準カードのキーを取る（上の2-1の結果を使ってもOK）
+SELECT thread_id, message_id, split_version, text_id
+FROM cards
+WHERE card_id = :card_id;
+
+prev（text_id < base を降順、必要数取ってから表示は昇順に整列）
+
+SELECT card_id, text_id, contents, card_role_id
+FROM cards
+WHERE thread_id = :thread_id
+  AND message_id = :message_id
+  AND split_version = :split_version
+  AND text_id < :base_text_id
+ORDER BY text_id DESC
+LIMIT :prev_n;
+
+next：
+
+SELECT card_id, text_id, contents, card_role_id
+FROM cards
+WHERE thread_id = :thread_id
+  AND message_id = :message_id
+  AND split_version = :split_version
+  AND text_id > :base_text_id
+ORDER BY text_id ASC
+LIMIT :next_n;
+
+（role名が必要なら card_roles join）
+
+3) カード更新 PATCH /api/cards/{id}
+
+contents/visibility/role を部分更新。
+SQLは「更新対象が来たらSETする」か、全部受けてNULL許容で更新。
+
+例：contents/visibility/role_id すべて来る想定版：
+
+UPDATE cards
+SET
+  contents = COALESCE(:contents, contents),
+  visibility = COALESCE(:visibility, visibility),
+  card_role_id = COALESCE(:card_role_id, card_role_id),
+  -- roleを手で変えるならconfidenceをNULLに落とす運用なら
+  card_role_confidence = CASE
+    WHEN :card_role_id IS NOT NULL THEN NULL
+    ELSE card_role_confidence
+  END,
+  is_edited = CASE
+    WHEN :contents IS NOT NULL THEN 1
+    ELSE is_edited
+  END,
+  updated_at = CURRENT_TIMESTAMP
+WHERE card_id = :card_id;
+
+4) ロール再推定（単体） POST /api/cards/{id}/role:recompute
+DB側は「NULLに落として、キュー投入」。
+※ キューはアプリ内でもいいけど、DBだけで回すなら簡易キューが要る。今はDBクエリ設計なので、DB上はこのUPDATEまで。
+
+UPDATE cards
+SET card_role_id = NULL,
+    card_role_confidence = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE card_id = :card_id;
+
+（バックグラウンド側が card_role_id IS NULL を拾って推定→UPDATEする）
+
+5) ロール付与ステータス GET /api/cards/roles:status
+失敗ログは残さない方針でも、カウントは返したい。
+今のスキーマのままだと「failed」をDBで判定できないので、pendingだけ返すならこれでOK：
+
+SELECT COUNT(1) AS pending
+FROM cards
+WHERE (:thread_id IS NULL OR thread_id = :thread_id)
+  AND (:visibility IS NULL OR visibility = :visibility)
+  AND card_role_id IS NULL;
+
+6) メッセージ編集 GET /api/threads/{thread}/messages/{message}
+SELECT
+  c.card_id, c.text_id, c.contents,
+  c.card_role_id, cr.minor_name AS card_role_name
+FROM cards c
+LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
+WHERE c.thread_id = :thread_id
+  AND c.message_id = :message_id
+  AND c.split_version = :split_version
+ORDER BY c.text_id ASC;
+
+7) 統合（上へmerge） POST /api/cards/{id}/merge-into-previous
+7-0 重要：トランザクション必須
+・やることが複数なので BEGIN IMMEDIATE; ... COMMIT;
+
+7-1 対象カード（下）取得
+SELECT card_id, thread_id, message_id, split_version, text_id, contents
+FROM cards
+WHERE card_id = :card_id;
+
+7-2 「直前カード」を特定（欠番対応）
+「text_idが小さい最大のやつ」
+SELECT card_id, contents
+FROM cards
+WHERE thread_id = :thread_id
+  AND message_id = :message_id
+  AND split_version = :split_version
+  AND text_id < :text_id
+ORDER BY text_id DESC
+LIMIT 1;
+
+7-3 上カード更新（contents連結、ロールNULL化、is_edited）
+UPDATE cards
+SET
+  contents = :upper_contents || CHAR(10) || :lower_contents,
+  is_edited = 1,
+  card_role_id = NULL,
+  card_role_confidence = NULL,
+  updated_at = CURRENT_TIMESTAMP
+WHERE card_id = :upper_card_id;
+
+7-4 下カード削除
+DELETE FROM cards WHERE card_id = :lower_card_id;
+
+※ links は ON DELETE CASCADE なので card_links / link_suggestions も連鎖で消える。
+
+8) card_links（詳細画面：kind別タブ＋バッチ）
+8-1 counts_by_kind
+「このカードを起点（from）」で数える想定：
+SELECT lk.link_kind_name, COUNT(1) AS cnt
+FROM card_links cl
+JOIN link_kinds lk ON lk.link_kind_id = cl.link_kind_id
+WHERE cl.from_card_id = :card_id
+GROUP BY lk.link_kind_name;
+
+8-2 items（kind絞り＋ソート）
+SELECT
+  cl.link_id,
+  lk.link_kind_name,
+  cl.confidence,
+  cl.from_card_id,
+  cl.to_card_id,
+  c2.card_id AS to_card_id,
+  c2.conversation_at AS to_conversation_at,
+  c2.contents AS to_contents,
+  cr2.minor_name AS to_card_role_name
+FROM card_links cl
+JOIN link_kinds lk ON lk.link_kind_id = cl.link_kind_id
+JOIN cards c2 ON c2.card_id = cl.to_card_id
+LEFT JOIN card_roles cr2 ON cr2.card_role_id = c2.card_role_id
+WHERE cl.from_card_id = :card_id
+  AND (:kind_name IS NULL OR lk.link_kind_name = :kind_name)
+ORDER BY {SORT_COL} {SORT_DIR}
+LIMIT :limit OFFSET :offset;
+
+SORT_COL候補：
+・confidence: cl.confidence
+・conversation_at: c2.conversation_at
+
+8-3 link_kind変更
+UPDATE card_links
+SET link_kind_id = :link_kind_id,
+    updated_at = CURRENT_TIMESTAMP
+WHERE link_id = :link_id;
+
+8-4 link削除
+DELETE FROM card_links WHERE link_id = :link_id;
+
+9) Import
+9-1 preview
+DBクエリ無し（分割処理はアプリ側）
+
+9-2 commit（cards INSERT）
+partsをまとめてバルクINSERT。
+UNIQUE(thread_id,message_id,text_id,split_version) あるので、再コミット時の扱いを決める。
+
+基本：INSERT で良い
+
+例：上書きコミット（編集後保存）型：
+INSERT INTO cards (
+  thread_id, message_id, text_id, split_version,
+  speaker_id, conversation_at,
+  contents, is_edited, visibility,
+  created_at, updated_at
+) VALUES (
+  :thread_id, :message_id, :text_id, :split_version,
+  :speaker_id, :conversation_at,
+  :contents, 1, 'normal',
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+)
+ON CONFLICT(thread_id, message_id, text_id, split_version);
+
+10) link_suggestions（pool）
+10-1 generate（直積 INSERT OR IGNORE）
+アプリで直積作ってまとめて入れる（from×toが大きいなら分割バッチ）。
+INSERT OR IGNORE INTO link_suggestions (
+  from_card_id, to_card_id,
+  status, attempts,
+  created_at, updated_at
+) VALUES (
+  :from_card_id, :to_card_id,
+  'queued', 0,
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+
+10-2 run（ワーカーが queued を取る）
+SQLiteで並列ワーカーを回すなら BEGIN IMMEDIATE でロックを取って「自分が拾った行だけprocessingにする」。
+queuedを取る
+SELECT suggestion_id, from_card_id, to_card_id
+FROM link_suggestions
+WHERE status = 'queued'
+ORDER BY updated_at ASC
+LIMIT :limit;
+
+取ったやつをprocessingにする（同一TX内推奨）
+UPDATE link_suggestions
+SET status = 'processing',
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id IN ( ... );
+
+その後TXをコミット→各件LLM→成功/失敗UPDATE。
+
+10-3 成功UPDATE
+UPDATE link_suggestions
+SET status = 'success',
+    suggested_link_kind_id = :kind_id,
+    suggested_confidence = :conf,
+    attempts = attempts + 1,
+    last_error = NULL,
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id = :suggestion_id;
+
+10-4 失敗UPDATE
+（ログは不要でも、失敗状態とattemptsは必要）
+UPDATE link_suggestions
+SET status = 'failed',
+    attempts = attempts + 1,
+    last_error = NULL, -- 本当に要らないならNULL固定でOK
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id = :suggestion_id;
+
+10-5 一覧取得（下部テーブル）
+SELECT
+  ls.suggestion_id,
+  ls.from_card_id,
+  ls.to_card_id,
+  ls.status,
+  ls.suggested_link_kind_id,
+  lk.link_kind_name AS suggested_link_kind_name,
+  ls.suggested_confidence,
+  ls.attempts,
+  ls.updated_at
+FROM link_suggestions ls
+LEFT JOIN link_kinds lk ON lk.link_kind_id = ls.suggested_link_kind_id
+WHERE 1=1
+  AND (:status IS NULL OR ls.status = :status)
+  AND (:from_card_id IS NULL OR ls.from_card_id = :from_card_id)
+  AND (:to_card_id IS NULL OR ls.to_card_id = :to_card_id)
+ORDER BY {SORT_COL} {SORT_DIR}
+LIMIT :limit OFFSET :offset;
+
+SORT_COL候補：ls.updated_at / ls.created_at / ls.suggested_confidence
+
+10-6 rerun
+UPDATE link_suggestions
+SET status = 'queued',
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id = :suggestion_id;
+
+10-7 approve（TX推奨）
+やること：card_links insert + suggestion update(expires)
+
+BEGIN IMMEDIATE;
+
+-- suggestion取得（success前提）
+SELECT from_card_id, to_card_id, suggested_link_kind_id, suggested_confidence
+FROM link_suggestions
+WHERE suggestion_id = :suggestion_id;
+
+-- card_links insert（上書きkindが来たらそれを使う）
+INSERT INTO card_links (
+  link_kind_id, from_card_id, to_card_id, confidence,
+  created_at, updated_at
+) VALUES (
+  :link_kind_id, :from_card_id, :to_card_id, :confidence,
+  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+);
+
+-- suggestion更新（1週間保持）
+UPDATE link_suggestions
+SET status = 'approved',
+    expires_at = datetime('now', '+7 days'),
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id = :suggestion_id;
+
+COMMIT;
+
+※ card_links は UNIQUE(link_kind_id, from_card_id, to_card_id) を入れてるなら、承認の再実行で落ちる可能性がある。
+その場合は INSERT OR IGNORE にするか、事前に存在チェックする。
+
+10-8 reject
+UPDATE link_suggestions
+SET status = 'rejected',
+    expires_at = datetime('now', '+7 days'),
+    updated_at = CURRENT_TIMESTAMP
+WHERE suggestion_id = :suggestion_id;
+
+10-9 cleanup
+DELETE FROM link_suggestions
+WHERE expires_at IS NOT NULL
+  AND expires_at <= CURRENT_TIMESTAMP;

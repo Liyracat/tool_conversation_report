@@ -1,0 +1,78 @@
+・カード一覧画面
+　・カード検索
+　　・フィルタ：visibility（normal/hidden/archived）default: normal
+　　・フィルタ：card_role_major / card_role_minor
+　　・フィルタ：role未設定（card_role_id is NULL）
+　　・フィルタ：speaker
+　　・ソート：conversation_at / created_at / card_role_confidence / updated_at
+　　・キーワード：contentsを部分一致検索
+　　・表示：card_role_name
+　　・表示：contents
+　　・表示：speaker
+　　・表示：conversation_at
+　　・表示件数：最大50件（ページャー使用・ページャーを動かす毎に情報を取得する）
+・カード詳細画面
+　・card_role_name表示
+　・contents表示
+　・関連付けボタン（関連付け画面に遷移して、デフォルトで右側に該当カードを配置）
+　・メッセージ表示（開閉可能・初期表示は閉じてる）（前2つ、後3つのメッセージが表示される（テキストクリックで該当カードの詳細画面へ遷移））
+　・その他カード情報表示（開閉可能・初期表示は閉じてる）
+　・関連カード表示（link_kinds毎にタブを用意、タブに関連づいているカード数バッチを表示）
+　　・タブ内で：card_links.confidence順 / cards.conversation_at順の切替
+　　・表示件数：最大20件（ページャー使用・ページャーを動かす毎に情報を取得する）
+　・関連カード編集（link_kindの編集）
+　・関連カードの削除
+・カード編集画面
+　・cardsテーブルの1レコードにのみ影響がでる編集(visibility変更（normal/hidden/archived）もここ)
+　　・thread_id/message_id/text_id/split_version は基本固定（事故防止）
+　・LLMによるロール再推定
+・メッセージ編集画面（cardsテーブルの複数レコードにまたがって影響が出る編集を行う（contentsのみユーザーで修正可能））
+　・同じmessage_idの情報をtext_id昇順で列挙
+　・カードのcontentsの編集
+　・カードのcontentsの統合（上のカードと統合）
+　　・対象：同一 thread_id + message_id + split_version
+　　・操作：
+　　　・上カード.contents = 上 + 下（間に改行を入れる）
+　　　・下カードを物理削除（下カードは削除するため、text_id は欠番になる）
+　　　・上カード.updated_at更新、is_edited=1
+　　・統合後のロール：
+　　　・card_role_id・card_role_confidenceはNULLに戻してLLMによる再推定（バックグラウンドで行う）
+　・カードのcontentsの分割（該当カードの下に追加）
+　　・操作：
+　　　・選択カードの下にカードを追加（split_key以外は選択カードの内容を複製。split_key = 選択カードのsplit_keyの上5桁.選択カードのsplit_keyの下2桁+1）
+　　・統合後のロール：
+　　　・card_role_id・card_role_confidenceはNULLに戻してLLMによる再推定（バックグラウンドで行う）
+　・カードの削除
+・設定画面
+　・発話者情報（CRUD）
+　・カードロール大項目情報（CRUD）
+　・カードロール情報（CRUD）
+　・無意味ロール情報（CRUD）
+　・関連付け名の情報（CRUD）
+・インポート画面
+　・テキスト貼付け
+　・自動分割＆LLM呼び出し＆cardsに格納
+　　・入力（貼り付け・メタ情報：speaker/日時/スレッドID生成）
+　　・プレビュー（自動分割結果を表示・編集・統合・分割（メッセージ編集画面みたいに））→編集後cardsに保存
+　　・実行（LLMロール付与→保存・バックグラウンドで行う）
+・関連付け画面
+　・カード検索
+　・関連付けピックアップ（左側にカード検索一覧、右側に総当たりで関連付けを行うカード一覧）
+　・関連付け実行
+　　・組み合わせをlink_suggestionsに保存
+　　・LLMに関連付けを実行（バックグラウンドで行う）
+　・link_suggestionsに登録されているデータを、画面下に表示
+　　・from_card
+　　・to_card
+　　・設定積みのlink_kind
+　　・status
+　　・link_kind提案結果
+　　・再実行ボタン（LLMの関連付けが失敗したとき）
+　　・承認ボタン（保存処理）
+　　・却下ボタン（何もしない））
+・サイドメニュー（開閉可能）
+　・Cards（一覧）
+　・Import
+　・Links（関連付け）
+　・Settings
+　・ジョブ実行状況（動作中）
