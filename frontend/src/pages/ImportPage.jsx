@@ -7,6 +7,18 @@ export default function ImportPage() {
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState("");
 
+  const renumberTextIds = (parts, messageId) => {
+    let counter = 1;
+    return parts.map((part) => {
+      if (part.message_id !== messageId) {
+        return part;
+      }
+      const updated = { ...part, text_id: counter };
+      counter += 1;
+      return updated;
+    });
+  };
+
   const handlePreview = async () => {
     setMessage("");
     const res = await fetch(`${apiBase}/import/preview`, {
@@ -40,6 +52,59 @@ export default function ImportPage() {
     }
     const data = await res.json();
     setMessage(`保存完了: ${data.created_card_ids.length}件`);
+    setRawText("");
+    setPreview(null);
+  };
+
+  const handleContentsChange = (index, value) => {
+    setPreview((current) => {
+      if (!current) return current;
+      const nextParts = current.parts.map((part, partIndex) =>
+        partIndex === index ? { ...part, contents: value } : part
+      );
+      return { ...current, parts: nextParts };
+    });
+  };
+
+  const handleMergeUp = (index) => {
+    setPreview((current) => {
+      if (!current) return current;
+      const parts = [...current.parts];
+      const target = parts[index];
+      if (!target) return current;
+      const { message_id: messageId } = target;
+      let previousIndex = -1;
+      for (let i = index - 1; i >= 0; i -= 1) {
+        if (parts[i].message_id === messageId) {
+          previousIndex = i;
+          break;
+        }
+      }
+      if (previousIndex === -1) return current;
+      const previous = parts[previousIndex];
+      const merged = {
+        ...previous,
+        contents: `${previous.contents}\n${target.contents}`,
+      };
+      parts.splice(previousIndex, 1, merged);
+      parts.splice(index, 1);
+      const renumbered = renumberTextIds(parts, messageId);
+      return { ...current, parts: renumbered };
+    });
+  };
+
+  const handleSplitDown = (index) => {
+    setPreview((current) => {
+      if (!current) return current;
+      const parts = [...current.parts];
+      const target = parts[index];
+      if (!target) return current;
+      const { message_id: messageId } = target;
+      const duplicate = { ...target };
+      parts.splice(index + 1, 0, duplicate);
+      const renumbered = renumberTextIds(parts, messageId);
+      return { ...current, parts: renumbered };
+    });
   };
 
   return (
@@ -71,19 +136,56 @@ export default function ImportPage() {
         <div className="section">
           <h3>プレビュー</h3>
           <div className="card-grid">
-            {preview.parts.map((part) => {
+            {preview.parts.map((part, index) => {
               const {
                 message_id: messageId,
                 text_id: textId,
                 speaker_name: speakerName,
                 contents,
               } = part;
+              const hasPreviousSameMessage = preview.parts
+                .slice(0, index)
+                .some((item) => item.message_id === messageId);
+              const showDivider =
+                index > 0 &&
+                preview.parts[index - 1].message_id !== messageId;
               return (
-                <div key={`${messageId}-${textId}`} className="card">
-                  <div className="card-title">
-                    {speakerName}{"　　　"}message_id: {messageId} / text_id: {textId}
+                <div key={`${messageId}-${textId}-${index}`}>
+                  {showDivider && <div className="preview-divider" />}
+                  <div className="card">
+                    <div className="card-title">
+                      {speakerName}{"　　　"}message_id: {messageId} / text_id:{" "}
+                      {textId}
+                    </div>
+                    <div className="card-body">
+                      <textarea
+                        className="preview-textarea"
+                        rows={4}
+                        value={contents}
+                        onChange={(event) =>
+                          handleContentsChange(index, event.target.value)
+                        }
+                      />
+                      <div className="preview-actions">
+                        {hasPreviousSameMessage && (
+                          <button
+                            className="secondary"
+                            type="button"
+                            onClick={() => handleMergeUp(index)}
+                          >
+                            上に統合
+                          </button>
+                        )}
+                        <button
+                          className="secondary"
+                          type="button"
+                          onClick={() => handleSplitDown(index)}
+                        >
+                          下に分割
+                        </button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="card-body">{contents}</div>
                 </div>
               );
             })}

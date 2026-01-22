@@ -84,6 +84,33 @@ body {
   line-height: 1.6;
 }
 
+.preview-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.preview-divider {
+  height: 2px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  margin: 12px 8px;
+}
+
+
 .badge {
   display: inline-flex;
   align-items: center;
