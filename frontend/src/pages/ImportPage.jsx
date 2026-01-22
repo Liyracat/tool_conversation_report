@@ -71,15 +71,22 @@ export default function ImportPage() {
         <div className="section">
           <h3>プレビュー</h3>
           <div className="card-grid">
-            {preview.parts.map((part) => (
-              <div key={`${part.message_id}-${part.text_id}`} className="card">
-                <div className="card-title">
-                  message_id: {part.message_id} / text_id: {part.text_id}
+            {preview.parts.map((part) => {
+              const {
+                message_id: messageId,
+                text_id: textId,
+                speaker_name: speakerName,
+                contents,
+              } = part;
+              return (
+                <div key={`${messageId}-${textId}`} className="card">
+                  <div className="card-title">
+                    {speakerName}{"　　　"}message_id: {messageId} / text_id: {textId}
+                  </div>
+                  <div className="card-body">{contents}</div>
                 </div>
-                <div className="card-subtitle">speaker: {part.speaker_name}</div>
-                <div className="card-body">{part.contents}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
