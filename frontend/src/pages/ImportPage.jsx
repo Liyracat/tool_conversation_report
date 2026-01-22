@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const apiBase = import.meta.env.VITE_API_BASE || "/api";
 
@@ -6,6 +6,13 @@ export default function ImportPage() {
   const [rawText, setRawText] = useState("");
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState("");
+
+  const getRowCount = (value) => Math.max(1, value.split("\n").length);
+  const resizeTextarea = (element) => {
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  };
 
   const renumberTextIds = (parts, messageId) => {
     let counter = 1;
@@ -107,6 +114,10 @@ export default function ImportPage() {
     });
   };
 
+  useEffect(() => {
+    document.querySelectorAll(".preview-textarea").forEach(resizeTextarea);
+  }, [preview]);
+
   return (
     <div>
       <div className="page-header">
@@ -153,19 +164,11 @@ export default function ImportPage() {
                 <div key={`${messageId}-${textId}-${index}`}>
                   {showDivider && <div className="preview-divider" />}
                   <div className="card">
-                    <div className="card-title">
-                      {speakerName}{"　　　"}message_id: {messageId} / text_id:{" "}
-                      {textId}
-                    </div>
-                    <div className="card-body">
-                      <textarea
-                        className="preview-textarea"
-                        rows={4}
-                        value={contents}
-                        onChange={(event) =>
-                          handleContentsChange(index, event.target.value)
-                        }
-                      />
+                    <div className="preview-header">
+                      <div className="card-title">
+                        {speakerName}{"　　　"}message_id: {messageId} / text_id:{" "}
+                        {textId}
+                      </div>
                       <div className="preview-actions">
                         {hasPreviousSameMessage && (
                           <button
@@ -184,6 +187,17 @@ export default function ImportPage() {
                           下に分割
                         </button>
                       </div>
+                    </div>
+                    <div className="card-body">
+                      <textarea
+                        className="preview-textarea"
+                        rows={getRowCount(contents)}
+                        value={contents}
+                        onChange={(event) =>
+                          handleContentsChange(index, event.target.value)
+                        }
+                        onInput={(event) => resizeTextarea(event.target)}
+                      />
                     </div>
                   </div>
                 </div>
