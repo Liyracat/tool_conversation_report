@@ -80,24 +80,16 @@ class CardLinkItem(BaseModel):
 
 class ImportPreviewRequest(BaseModel):
     raw_text: str
-    speaker_id: int
-    conversation_at: str
-    split_version: int = 1
 
 
 class ImportPreviewResponse(BaseModel):
     thread_id: str
-    message_id: int
     split_version: int
     parts: list[dict]
 
 
 class ImportCommitRequest(BaseModel):
     thread_id: str
-    message_id: int
-    split_version: int
-    speaker_id: int
-    conversation_at: str
     parts: list[dict]
 
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Any, Dict, Iterable, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response
@@ -504,13 +503,41 @@ def split_text(raw_text: str) -> list[str]:
     return [line.strip() for line in raw_text.splitlines() if line.strip()]
 
 
+def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]:
+    parts: list[dict] = []
+    current_speaker: Optional[dict] = None
+    message_id = 0
+    text_id = 0
+    for line in split_text(raw_text):
+        if line in speaker_map:
+            current_speaker = speaker_map[line]
+            message_id += 1
+            text_id = 0
+            continue
+        if current_speaker is None:
+            raise HTTPException(status_code=400, detail="Speaker definition line is required before content.")
+        text_id += 1
+        parts.append(
+            {
+                "message_id": message_id,
+                "text_id": text_id,
+                "speaker_id": current_speaker["speaker_id"],
+                "speaker_name": current_speaker["speaker_name"],
+                "contents": line,
+            }
+        )
+    return parts
+
+
 @app.post("/import/preview")
 async def import_preview(payload: ImportPreviewRequest) -> ImportPreviewResponse:
-    parts = [{"text_id": idx + 1, "contents": text} for idx, text in enumerate(split_text(payload.raw_text))]
+    with db_session() as conn:
+        speakers = fetch_all(conn, "SELECT speaker_id, speaker_name FROM speakers ORDER BY speaker_id", {})
+    speaker_map = {speaker["speaker_name"]: speaker for speaker in speakers}
+    parts = split_import_text(payload.raw_text, speaker_map)
     return ImportPreviewResponse(
         thread_id=str(uuid.uuid4()),
-        message_id=1,
-        split_version=payload.split_version,
+        split_version=1,
         parts=parts,
     )
 
@@ -520,7 +547,7 @@ async def import_commit(payload: ImportCommitRequest) -> dict:
     created_ids: list[int] = []
     with db_session() as conn:
         for part in payload.parts:
-            split_key = f"{payload.message_id:05d}.{part['text_id']:02d}"
+            split_key = f"{part['text_id']:05d}.00"
             cur = conn.execute(
                 """
                 INSERT INTO cards (
@@ -530,24 +557,23 @@ async def import_commit(payload: ImportCommitRequest) -> dict:
                   created_at, updated_at
                 ) VALUES (
                   :thread_id, :message_id, :text_id, :split_key, :split_version,
-                  :speaker_id, :conversation_at,
-                  :contents, 1, 'normal',
+                  :speaker_id, CURRENT_TIMESTAMP,
+                  :contents, 0, 'normal',
                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 );
                 """,
                 {
                     "thread_id": payload.thread_id,
-                    "message_id": payload.message_id,
+                    "message_id": part["message_id"],
                     "text_id": part["text_id"],
                     "split_key": split_key,
-                    "split_version": payload.split_version,
-                    "speaker_id": payload.speaker_id,
-                    "conversation_at": payload.conversation_at,
+                    "split_version": 1,
+                    "speaker_id": part["speaker_id"],
                     "contents": part["contents"],
                 },
             )
             created_ids.append(cur.lastrowid)
-    return {"created_card_ids": created_ids, "thread_id": payload.thread_id, "message_id": payload.message_id}
+    return {"created_card_ids": created_ids, "thread_id": payload.thread_id}
 
 
 @app.post("/import/{thread_id}/roles:run", status_code=202)
