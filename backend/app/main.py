@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, Iterable, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import db_session, init_db
@@ -393,11 +393,12 @@ async def merge_into_previous(card_id: int) -> dict:
 
 
 @app.delete("/api/cards/{card_id}", status_code=204)
-async def delete_card(card_id: int) -> None:
+async def delete_card(card_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM cards WHERE card_id = :card_id", {"card_id": card_id}).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Card not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/cards/{card_id}/links")
@@ -492,11 +493,12 @@ async def update_link(link_id: int, payload: LinkKindUpdate) -> dict:
 
 
 @app.delete("/api/links/{link_id}", status_code=204)
-async def delete_link(link_id: int) -> None:
+async def delete_link(link_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM card_links WHERE link_id = :link_id", {"link_id": link_id}).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Link not found")
+    return Response(status_code=204)
 
 
 def split_text(raw_text: str) -> list[str]:
@@ -773,11 +775,12 @@ async def update_speaker(speaker_id: int, payload: UpdateSpeaker) -> dict:
 
 
 @app.delete("/api/speakers/{speaker_id}", status_code=204)
-async def delete_speaker(speaker_id: int) -> None:
+async def delete_speaker(speaker_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM speakers WHERE speaker_id = :speaker_id", {"speaker_id": speaker_id}).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Speaker not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/card-role-major-items")
@@ -813,7 +816,7 @@ async def update_major_item(major_id: int, payload: UpdateMajorItem) -> dict:
 
 
 @app.delete("/api/card-role-major-items/{major_id}", status_code=204)
-async def delete_major_item(major_id: int) -> None:
+async def delete_major_item(major_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
             "DELETE FROM card_role_major_items WHERE card_role_major_item_id = :major_id",
@@ -821,6 +824,7 @@ async def delete_major_item(major_id: int) -> None:
         ).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Major item not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/card-roles")
@@ -859,11 +863,12 @@ async def update_card_role(role_id: int, payload: UpdateCardRole) -> dict:
 
 
 @app.delete("/api/card-roles/{role_id}", status_code=204)
-async def delete_card_role(role_id: int) -> None:
+async def delete_card_role(role_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM card_roles WHERE card_role_id = :role_id", {"role_id": role_id}).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Card role not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/link-kinds")
@@ -899,7 +904,7 @@ async def update_link_kind(link_kind_id: int, payload: UpdateLinkKind) -> dict:
 
 
 @app.delete("/api/link-kinds/{link_kind_id}", status_code=204)
-async def delete_link_kind(link_kind_id: int) -> None:
+async def delete_link_kind(link_kind_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
             "DELETE FROM link_kinds WHERE link_kind_id = :link_kind_id",
@@ -907,6 +912,7 @@ async def delete_link_kind(link_kind_id: int) -> None:
         ).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Link kind not found")
+    return Response(status_code=204)
 
 
 @app.get("/api/meaningless_phrases")
@@ -945,7 +951,7 @@ async def update_meaningless_phrase(meaningless_id: int, payload: UpdateMeaningl
 
 
 @app.delete("/api/meaningless_phrases/{meaningless_id}", status_code=204)
-async def delete_meaningless_phrase(meaningless_id: int) -> None:
+async def delete_meaningless_phrase(meaningless_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
             "DELETE FROM meaningless_phrases WHERE meaningless_id = :meaningless_id",
@@ -953,3 +959,4 @@ async def delete_meaningless_phrase(meaningless_id: int) -> None:
         ).rowcount
     if deleted == 0:
         raise HTTPException(status_code=404, detail="Meaningless phrase not found")
+    return Response(status_code=204)
