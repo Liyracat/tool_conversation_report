@@ -1,38 +1,25 @@
-import { NavLink, Route, Routes } from "react-router-dom";
-import CardsPage from "./pages/CardsPage.jsx";
-import CardDetailPage from "./pages/CardDetailPage.jsx";
-import ImportPage from "./pages/ImportPage.jsx";
-import LinkSuggestionsPage from "./pages/LinkSuggestionsPage.jsx";
+import { useState } from "react";
+import Header from "./components/Header.jsx";
+import UnreadPage from "./pages/UnreadPage.jsx";
+import SavedPage from "./pages/SavedPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 
-const navItems = [
-  { to: "/", label: "Cards" },
-  { to: "/import", label: "Import" },
-  { to: "/links", label: "Links" },
-  { to: "/settings", label: "Settings" },
-];
+const pages = {
+  unread: { label: "未評価記事一覧" },
+  saved: { label: "保存記事一覧" },
+  settings: { label: "設定" }
+};
 
 export default function App() {
+  const [page, setPage] = useState("unread");
+
   return (
     <div className="app">
-      <aside className="sidebar">
-        <h1>Conversation Cards</h1>
-        <nav className="nav-links">
-          {navItems.map((item) => (
-            <NavLink key={item.to} to={item.to} end>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-      </aside>
+      <Header page={page} onChange={setPage} pages={pages} />
       <main className="main">
-        <Routes>
-          <Route path="/" element={<CardsPage />} />
-          <Route path="/cards/:cardId" element={<CardDetailPage />} />
-          <Route path="/import" element={<ImportPage />} />
-          <Route path="/links" element={<LinkSuggestionsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        {page === "unread" && <UnreadPage />}
+        {page === "saved" && <SavedPage />}
+        {page === "settings" && <SettingsPage />}
       </main>
     </div>
   );
