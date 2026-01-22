@@ -63,7 +63,7 @@ def fetch_all(conn, query: str, params: dict) -> list[dict]:
     return [dict(row) for row in cur.fetchall()]
 
 
-@app.get("/api/cards")
+@app.get("/cards")
 async def list_cards(
     q: Optional[str] = None,
     visibility: str = "normal",
@@ -153,7 +153,7 @@ async def list_cards(
     return {"total": total, "items": items}
 
 
-@app.get("/api/cards/{card_id}")
+@app.get("/cards/{card_id}")
 async def get_card(card_id: int, context_prev_messages: int = 2, context_next_messages: int = 3) -> dict:
     with db_session() as conn:
         card_query = """
@@ -228,7 +228,7 @@ async def get_card(card_id: int, context_prev_messages: int = 2, context_next_me
     }
 
 
-@app.patch("/api/cards/{card_id}")
+@app.patch("/cards/{card_id}")
 async def update_card(card_id: int, payload: CardUpdate) -> dict:
     with db_session() as conn:
         existing = fetch_one(conn, "SELECT card_id FROM cards WHERE card_id = :card_id", {"card_id": card_id})
@@ -263,7 +263,7 @@ async def update_card(card_id: int, payload: CardUpdate) -> dict:
     return {"card_id": card_id}
 
 
-@app.post("/api/cards/{card_id}/role:recompute", status_code=202)
+@app.post("/cards/{card_id}/role:recompute", status_code=202)
 async def recompute_role(card_id: int) -> dict:
     with db_session() as conn:
         updated = conn.execute(
@@ -281,7 +281,7 @@ async def recompute_role(card_id: int) -> dict:
     return {"queued": True}
 
 
-@app.post("/api/cards/roles:backfill", status_code=202)
+@app.post("/cards/roles:backfill", status_code=202)
 async def backfill_roles(body: dict) -> dict:
     thread_id = body.get("thread_id")
     visibility = body.get("visibility")
@@ -299,7 +299,7 @@ async def backfill_roles(body: dict) -> dict:
     return {"queued_count": len(cards)}
 
 
-@app.get("/api/cards/roles:status")
+@app.get("/cards/roles:status")
 async def role_status(thread_id: Optional[str] = None, visibility: Optional[str] = None) -> dict:
     with db_session() as conn:
         pending = conn.execute(
@@ -316,7 +316,7 @@ async def role_status(thread_id: Optional[str] = None, visibility: Optional[str]
     return {"pending": pending, "failed": 0, "last_updated_at": last}
 
 
-@app.get("/api/threads/{thread_id}/messages/{message_id}")
+@app.get("/threads/{thread_id}/messages/{message_id}")
 async def get_message_cards(thread_id: str, message_id: int, split_version: int = 1) -> dict:
     with db_session() as conn:
         rows = fetch_all(
@@ -340,7 +340,7 @@ async def get_message_cards(thread_id: str, message_id: int, split_version: int 
     }
 
 
-@app.post("/api/cards/{card_id}/merge-into-previous")
+@app.post("/cards/{card_id}/merge-into-previous")
 async def merge_into_previous(card_id: int) -> dict:
     with db_session() as conn:
         base = fetch_one(
@@ -392,7 +392,7 @@ async def merge_into_previous(card_id: int) -> dict:
     return {"merged_into_card_id": upper["card_id"], "deleted_card_id": base["card_id"]}
 
 
-@app.delete("/api/cards/{card_id}", status_code=204)
+@app.delete("/cards/{card_id}", status_code=204)
 async def delete_card(card_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM cards WHERE card_id = :card_id", {"card_id": card_id}).rowcount
@@ -401,7 +401,7 @@ async def delete_card(card_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/cards/{card_id}/links")
+@app.get("/cards/{card_id}/links")
 async def list_card_links(
     card_id: int,
     kind: Optional[str] = None,
@@ -475,7 +475,7 @@ async def list_card_links(
     return {"counts_by_kind": counts_by_kind, "items": wrapped}
 
 
-@app.patch("/api/links/{link_id}")
+@app.patch("/links/{link_id}")
 async def update_link(link_id: int, payload: LinkKindUpdate) -> dict:
     with db_session() as conn:
         updated = conn.execute(
@@ -492,7 +492,7 @@ async def update_link(link_id: int, payload: LinkKindUpdate) -> dict:
     return {"link_id": link_id}
 
 
-@app.delete("/api/links/{link_id}", status_code=204)
+@app.delete("/links/{link_id}", status_code=204)
 async def delete_link(link_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM card_links WHERE link_id = :link_id", {"link_id": link_id}).rowcount
@@ -505,7 +505,7 @@ def split_text(raw_text: str) -> list[str]:
     return [line.strip() for line in raw_text.splitlines() if line.strip()]
 
 
-@app.post("/api/import/preview")
+@app.post("/import/preview")
 async def import_preview(payload: ImportPreviewRequest) -> ImportPreviewResponse:
     parts = [{"text_id": idx + 1, "contents": text} for idx, text in enumerate(split_text(payload.raw_text))]
     return ImportPreviewResponse(
@@ -516,7 +516,7 @@ async def import_preview(payload: ImportPreviewRequest) -> ImportPreviewResponse
     )
 
 
-@app.post("/api/import/commit", status_code=201)
+@app.post("/import/commit", status_code=201)
 async def import_commit(payload: ImportCommitRequest) -> dict:
     created_ids: list[int] = []
     with db_session() as conn:
@@ -551,12 +551,12 @@ async def import_commit(payload: ImportCommitRequest) -> dict:
     return {"created_card_ids": created_ids, "thread_id": payload.thread_id, "message_id": payload.message_id}
 
 
-@app.post("/api/import/{thread_id}/roles:run", status_code=202)
+@app.post("/import/{thread_id}/roles:run", status_code=202)
 async def import_roles_run(thread_id: str, body: dict) -> dict:
     return {"queued": True}
 
 
-@app.post("/api/link-suggestions/generate", status_code=201)
+@app.post("/link-suggestions/generate", status_code=201)
 async def generate_link_suggestions(payload: LinkSuggestionGenerateRequest) -> dict:
     created = 0
     skipped = 0
@@ -582,12 +582,12 @@ async def generate_link_suggestions(payload: LinkSuggestionGenerateRequest) -> d
     return {"created": created, "skipped": skipped}
 
 
-@app.post("/api/link-suggestions/run", status_code=202)
+@app.post("/link-suggestions/run", status_code=202)
 async def run_link_suggestions(payload: LinkSuggestionRunRequest) -> dict:
     return {"queued": True}
 
 
-@app.get("/api/link-suggestions")
+@app.get("/link-suggestions")
 async def list_link_suggestions(
     status: Optional[str] = None,
     from_card_id: Optional[int] = None,
@@ -646,7 +646,7 @@ async def list_link_suggestions(
     return {"total": total, "items": items}
 
 
-@app.post("/api/link-suggestions/{suggestion_id}/rerun", status_code=202)
+@app.post("/link-suggestions/{suggestion_id}/rerun", status_code=202)
 async def rerun_link_suggestion(suggestion_id: int) -> dict:
     with db_session() as conn:
         updated = conn.execute(
@@ -662,7 +662,7 @@ async def rerun_link_suggestion(suggestion_id: int) -> dict:
     return {"queued": True}
 
 
-@app.post("/api/link-suggestions/{suggestion_id}/approve", status_code=201)
+@app.post("/link-suggestions/{suggestion_id}/approve", status_code=201)
 async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApproveRequest) -> dict:
     with db_session() as conn:
         suggestion = fetch_one(
@@ -708,7 +708,7 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
     return {"link_id": link_id.fetchone()[0]}
 
 
-@app.post("/api/link-suggestions/{suggestion_id}/reject")
+@app.post("/link-suggestions/{suggestion_id}/reject")
 async def reject_link_suggestion(suggestion_id: int) -> dict:
     with db_session() as conn:
         updated = conn.execute(
@@ -726,7 +726,7 @@ async def reject_link_suggestion(suggestion_id: int) -> dict:
     return {"rejected": True}
 
 
-@app.post("/api/link-suggestions/cleanup")
+@app.post("/link-suggestions/cleanup")
 async def cleanup_link_suggestions() -> dict:
     with db_session() as conn:
         deleted = conn.execute(
@@ -739,13 +739,13 @@ async def cleanup_link_suggestions() -> dict:
     return {"deleted": deleted}
 
 
-@app.get("/api/speakers")
+@app.get("/speakers")
 async def list_speakers() -> list[dict]:
     with db_session() as conn:
         return fetch_all(conn, "SELECT * FROM speakers ORDER BY speaker_id", {})
 
 
-@app.post("/api/speakers", status_code=201)
+@app.post("/speakers", status_code=201)
 async def create_speaker(payload: CreateSpeaker) -> dict:
     with db_session() as conn:
         cur = conn.execute(
@@ -758,7 +758,7 @@ async def create_speaker(payload: CreateSpeaker) -> dict:
     return {"speaker_id": cur.lastrowid}
 
 
-@app.patch("/api/speakers/{speaker_id}")
+@app.patch("/speakers/{speaker_id}")
 async def update_speaker(speaker_id: int, payload: UpdateSpeaker) -> dict:
     data = payload.model_dump(exclude_unset=True)
     if not data:
@@ -774,7 +774,7 @@ async def update_speaker(speaker_id: int, payload: UpdateSpeaker) -> dict:
     return {"speaker_id": speaker_id}
 
 
-@app.delete("/api/speakers/{speaker_id}", status_code=204)
+@app.delete("/speakers/{speaker_id}", status_code=204)
 async def delete_speaker(speaker_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM speakers WHERE speaker_id = :speaker_id", {"speaker_id": speaker_id}).rowcount
@@ -783,13 +783,13 @@ async def delete_speaker(speaker_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/card-role-major-items")
+@app.get("/card-role-major-items")
 async def list_major_items() -> list[dict]:
     with db_session() as conn:
         return fetch_all(conn, "SELECT * FROM card_role_major_items ORDER BY card_role_major_item_id", {})
 
 
-@app.post("/api/card-role-major-items", status_code=201)
+@app.post("/card-role-major-items", status_code=201)
 async def create_major_item(payload: CreateMajorItem) -> dict:
     with db_session() as conn:
         cur = conn.execute(
@@ -799,7 +799,7 @@ async def create_major_item(payload: CreateMajorItem) -> dict:
     return {"card_role_major_item_id": cur.lastrowid}
 
 
-@app.patch("/api/card-role-major-items/{major_id}")
+@app.patch("/card-role-major-items/{major_id}")
 async def update_major_item(major_id: int, payload: UpdateMajorItem) -> dict:
     data = payload.model_dump(exclude_unset=True)
     if not data:
@@ -815,7 +815,7 @@ async def update_major_item(major_id: int, payload: UpdateMajorItem) -> dict:
     return {"card_role_major_item_id": major_id}
 
 
-@app.delete("/api/card-role-major-items/{major_id}", status_code=204)
+@app.delete("/card-role-major-items/{major_id}", status_code=204)
 async def delete_major_item(major_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
@@ -827,13 +827,13 @@ async def delete_major_item(major_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/card-roles")
+@app.get("/card-roles")
 async def list_card_roles() -> list[dict]:
     with db_session() as conn:
         return fetch_all(conn, "SELECT * FROM card_roles ORDER BY card_role_id", {})
 
 
-@app.post("/api/card-roles", status_code=201)
+@app.post("/card-roles", status_code=201)
 async def create_card_role(payload: CreateCardRole) -> dict:
     with db_session() as conn:
         cur = conn.execute(
@@ -846,7 +846,7 @@ async def create_card_role(payload: CreateCardRole) -> dict:
     return {"card_role_id": cur.lastrowid}
 
 
-@app.patch("/api/card-roles/{role_id}")
+@app.patch("/card-roles/{role_id}")
 async def update_card_role(role_id: int, payload: UpdateCardRole) -> dict:
     data = payload.model_dump(exclude_unset=True)
     if not data:
@@ -862,7 +862,7 @@ async def update_card_role(role_id: int, payload: UpdateCardRole) -> dict:
     return {"card_role_id": role_id}
 
 
-@app.delete("/api/card-roles/{role_id}", status_code=204)
+@app.delete("/card-roles/{role_id}", status_code=204)
 async def delete_card_role(role_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute("DELETE FROM card_roles WHERE card_role_id = :role_id", {"role_id": role_id}).rowcount
@@ -871,13 +871,13 @@ async def delete_card_role(role_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/link-kinds")
+@app.get("/link-kinds")
 async def list_link_kinds() -> list[dict]:
     with db_session() as conn:
         return fetch_all(conn, "SELECT * FROM link_kinds ORDER BY link_kind_id", {})
 
 
-@app.post("/api/link-kinds", status_code=201)
+@app.post("/link-kinds", status_code=201)
 async def create_link_kind(payload: CreateLinkKind) -> dict:
     with db_session() as conn:
         cur = conn.execute(
@@ -887,7 +887,7 @@ async def create_link_kind(payload: CreateLinkKind) -> dict:
     return {"link_kind_id": cur.lastrowid}
 
 
-@app.patch("/api/link-kinds/{link_kind_id}")
+@app.patch("/link-kinds/{link_kind_id}")
 async def update_link_kind(link_kind_id: int, payload: UpdateLinkKind) -> dict:
     data = payload.model_dump(exclude_unset=True)
     if not data:
@@ -903,7 +903,7 @@ async def update_link_kind(link_kind_id: int, payload: UpdateLinkKind) -> dict:
     return {"link_kind_id": link_kind_id}
 
 
-@app.delete("/api/link-kinds/{link_kind_id}", status_code=204)
+@app.delete("/link-kinds/{link_kind_id}", status_code=204)
 async def delete_link_kind(link_kind_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
@@ -915,13 +915,13 @@ async def delete_link_kind(link_kind_id: int) -> Response:
     return Response(status_code=204)
 
 
-@app.get("/api/meaningless_phrases")
+@app.get("/meaningless_phrases")
 async def list_meaningless_phrases() -> list[dict]:
     with db_session() as conn:
         return fetch_all(conn, "SELECT * FROM meaningless_phrases ORDER BY meaningless_id", {})
 
 
-@app.post("/api/meaningless_phrases", status_code=201)
+@app.post("/meaningless_phrases", status_code=201)
 async def create_meaningless_phrase(payload: CreateMeaninglessPhrase) -> dict:
     with db_session() as conn:
         cur = conn.execute(
@@ -934,7 +934,7 @@ async def create_meaningless_phrase(payload: CreateMeaninglessPhrase) -> dict:
     return {"meaningless_id": cur.lastrowid}
 
 
-@app.patch("/api/meaningless_phrases/{meaningless_id}")
+@app.patch("/meaningless_phrases/{meaningless_id}")
 async def update_meaningless_phrase(meaningless_id: int, payload: UpdateMeaninglessPhrase) -> dict:
     data = payload.model_dump(exclude_unset=True)
     if not data:
@@ -950,7 +950,7 @@ async def update_meaningless_phrase(meaningless_id: int, payload: UpdateMeaningl
     return {"meaningless_id": meaningless_id}
 
 
-@app.delete("/api/meaningless_phrases/{meaningless_id}", status_code=204)
+@app.delete("/meaningless_phrases/{meaningless_id}", status_code=204)
 async def delete_meaningless_phrase(meaningless_id: int) -> Response:
     with db_session() as conn:
         deleted = conn.execute(
