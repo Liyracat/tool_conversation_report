@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
@@ -45,6 +46,7 @@ def init_db() -> None:
         conn.close()
 
 
+@contextmanager
 def db_session() -> Iterator[sqlite3.Connection]:
     conn = get_db()
     try:
