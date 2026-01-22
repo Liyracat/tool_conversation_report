@@ -6,8 +6,6 @@ export default function ImportPage() {
   const [rawText, setRawText] = useState("");
   const [preview, setPreview] = useState(null);
   const [message, setMessage] = useState("");
-  const [speakerId, setSpeakerId] = useState("1");
-  const [conversationAt, setConversationAt] = useState(new Date().toISOString());
 
   const handlePreview = async () => {
     setMessage("");
@@ -16,9 +14,6 @@ export default function ImportPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         raw_text: rawText,
-        speaker_id: Number(speakerId),
-        conversation_at: conversationAt,
-        split_version: 1,
       }),
     });
     if (!res.ok) {
@@ -36,10 +31,6 @@ export default function ImportPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         thread_id: preview.thread_id,
-        message_id: preview.message_id,
-        split_version: preview.split_version,
-        speaker_id: Number(speakerId),
-        conversation_at: conversationAt,
         parts: preview.parts,
       }),
     });
@@ -60,19 +51,6 @@ export default function ImportPage() {
         </div>
       </div>
       <div className="card">
-        <div className="filters">
-          <input
-            type="text"
-            value={speakerId}
-            onChange={(event) => setSpeakerId(event.target.value)}
-            placeholder="speaker_id"
-          />
-          <input
-            type="text"
-            value={conversationAt}
-            onChange={(event) => setConversationAt(event.target.value)}
-          />
-        </div>
         <textarea
           rows={8}
           style={{ width: "100%", marginTop: "12px" }}
@@ -94,8 +72,11 @@ export default function ImportPage() {
           <h3>プレビュー</h3>
           <div className="card-grid">
             {preview.parts.map((part) => (
-              <div key={part.text_id} className="card">
-                <div className="card-title">text_id: {part.text_id}</div>
+              <div key={`${part.message_id}-${part.text_id}`} className="card">
+                <div className="card-title">
+                  message_id: {part.message_id} / text_id: {part.text_id}
+                </div>
+                <div className="card-subtitle">speaker: {part.speaker_name}</div>
                 <div className="card-body">{part.contents}</div>
               </div>
             ))}
