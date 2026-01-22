@@ -532,8 +532,8 @@ def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]
 @app.post("/import/preview")
 async def import_preview(payload: ImportPreviewRequest) -> ImportPreviewResponse:
     with db_session() as conn:
-        speakers = fetch_all(conn, "SELECT speaker_id, speaker_name FROM speakers ORDER BY speaker_id", {})
-    speaker_map = {speaker["speaker_name"]: speaker for speaker in speakers}
+        speakers = fetch_all(conn, "SELECT speaker_id, speaker_name, speaker_role FROM speakers ORDER BY speaker_id", {})
+    speaker_map = {speaker["speaker_role"]: speaker for speaker in speakers}
     parts = split_import_text(payload.raw_text, speaker_map)
     return ImportPreviewResponse(
         thread_id=str(uuid.uuid4()),
