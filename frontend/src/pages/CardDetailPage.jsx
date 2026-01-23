@@ -41,13 +41,11 @@ export default function CardDetailPage() {
         <Link to="/">一覧へ戻る</Link>
       </div>
       <div className="card">
-        <div className="card-title">
-          {card.card_role_name || "未設定"} ・ {card.speaker_name || "-"}
-        </div>
-        <div className="card-body">{card.contents}</div>
-        <div className="section">
-          <span className="badge">{card.visibility}</span>
-          <span className="empty"> {card.conversation_at}</span>
+        <div className="card-row">
+          <span className="card-summary-text">
+            {card.speaker_name || "-"}：{card.contents || ""}
+          </span>
+          <span className="card-role">{card.card_role_name || "未設定"}</span>
         </div>
       </div>
 
@@ -56,14 +54,22 @@ export default function CardDetailPage() {
         <div className="card-grid">
           {context.prev.map((item) => (
             <div key={item.card_id} className="card">
-              <div className="card-title">{item.card_role_name || "未設定"}</div>
-              <div className="card-body">{item.contents}</div>
+        <div className="card-row">
+          <span className="card-summary-text">
+            {item.speaker_name || "-"}：{item.contents || ""}
+          </span>
+          <span className="card-role">{item.card_role_name || "未設定"}</span>
+        </div>
             </div>
           ))}
           {context.next.map((item) => (
             <div key={item.card_id} className="card">
-              <div className="card-title">{item.card_role_name || "未設定"}</div>
-              <div className="card-body">{item.contents}</div>
+        <div className="card-row">
+          <span className="card-summary-text">
+            {item.speaker_name || "-"}：{item.contents || ""}
+          </span>
+          <span className="card-role">{item.card_role_name || "未設定"}</span>
+        </div>
             </div>
           ))}
         </div>

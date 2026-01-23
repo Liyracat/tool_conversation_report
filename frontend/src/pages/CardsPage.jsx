@@ -79,16 +79,18 @@ export default function CardsPage() {
           <p className="empty">カードがありません。</p>
         ) : (
           cards.map((card) => (
-            <div key={card.card_id} className="card">
-              <div className="card-title">
-                <span>{card.card_role_name || "未設定"}</span> ・
-                <span> {card.speaker_name || "-"}</span>
+            <Link
+              key={card.card_id}
+              to={`/cards/${card.card_id}`}
+              className="card card-link"
+            >
+              <div className="card-row">
+                <span className="card-summary-text">
+                  {card.speaker_name || "-"}：{card.contents || ""}
+                </span>
+                <span className="card-role">{card.card_role_name || "未設定"}</span>
               </div>
-              <div className="card-body">{card.contents}</div>
-              <div className="section">
-                <Link to={`/cards/${card.card_id}`}>詳細を開く</Link>
-              </div>
-            </div>
+            </Link>
           ))
         )}
       </div>

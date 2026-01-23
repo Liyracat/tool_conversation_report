@@ -166,7 +166,7 @@ export default function ImportPage() {
                   <div className="preview-card">
                     <div className="preview-header">
                       <div className="preview-contents">
-                        <div className="card-title">
+                        <div className="preview-card-title">
                           {speakerName}
                         </div>
                         <div className="card-body">
