@@ -7,9 +7,16 @@ export default function CardDetailPage() {
   const { cardId } = useParams();
   const [card, setCard] = useState(null);
   const [context, setContext] = useState({ items: [] });
+  const [contextEdits, setContextEdits] = useState([]);
+  const [contextMerges, setContextMerges] = useState([]);
+  const [contextSplits, setContextSplits] = useState([]);
   const [links, setLinks] = useState([]);
   const [detailForm, setDetailForm] = useState(null);
   const [saveState, setSaveState] = useState({ status: "idle", message: "" });
+  const [contextSaveState, setContextSaveState] = useState({
+    status: "idle",
+    message: "",
+  });
 
   useEffect(() => {
     const loadCard = async () => {
@@ -19,6 +26,16 @@ export default function CardDetailPage() {
         const data = await res.json();
         setCard(data.card);
         setContext(data.context_messages || { items: [] });
+        setContextEdits(
+          (data.context_messages?.items || []).map((item) => ({
+            ...item,
+            localId: `card-${item.card_id}`,
+            originalContents: item.contents,
+          }))
+        );
+        setContextMerges([]);
+        setContextSplits([]);
+        setContextSaveState({ status: "idle", message: "" });
         setDetailForm({
           thread_id: data.card?.thread_id ?? "",
           message_id: data.card?.message_id ?? "",
@@ -38,6 +55,9 @@ export default function CardDetailPage() {
       } catch (error) {
         setCard(null);
         setContext({ items: [] });
+        setContextEdits([]);
+        setContextMerges([]);
+        setContextSplits([]);
         setDetailForm(null);
       }
     };
@@ -61,7 +81,13 @@ export default function CardDetailPage() {
     return <p className="empty">カード詳細を読み込み中...</p>;
   }
 
-  const contextItems = context.items || [];
+  const minTextIdByMessage = contextEdits.reduce((acc, item) => {
+    const current = acc[item.message_id];
+    if (current === undefined || item.text_id < current) {
+      acc[item.message_id] = item.text_id;
+    }
+    return acc;
+  }, {});
 
   const handleDetailChange = (field, value) => {
     setDetailForm((prev) => ({ ...prev, [field]: value }));
@@ -128,6 +154,126 @@ export default function CardDetailPage() {
     }
   };
 
+  const handleContextContentChange = (localId, value) => {
+    setContextEdits((prev) =>
+      prev.map((item) =>
+        item.localId === localId ? { ...item, contents: value } : item
+      )
+    );
+  };
+
+  const findPreviousIndex = (items, index) => {
+    const current = items[index];
+    if (!current) return -1;
+    for (let i = index - 1; i >= 0; i -= 1) {
+      if (items[i].message_id === current.message_id) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  const handleMergeUp = (index) => {
+    setContextEdits((prev) => {
+      const next = [...prev];
+      const previousIndex = findPreviousIndex(next, index);
+      if (previousIndex < 0) return prev;
+      const source = next[index];
+      const target = next[previousIndex];
+      const mergedContents = `${target.contents}\n${source.contents}`;
+      next[previousIndex] = { ...target, contents: mergedContents };
+      next.splice(index, 1);
+      if (source.card_id && target.card_id) {
+        setContextMerges((current) => [
+          ...current,
+          { source_card_id: source.card_id, target_card_id: target.card_id },
+        ]);
+      }
+      return next;
+    });
+  };
+
+  const handleSplitDown = (index) => {
+    setContextEdits((prev) => {
+      const next = [...prev];
+      const source = next[index];
+      if (!source?.card_id) return prev;
+      const maxTextId = Math.max(
+        ...next
+          .filter((item) => item.message_id === source.message_id)
+          .map((item) => item.text_id)
+      );
+      const newItem = {
+        ...source,
+        card_id: null,
+        text_id: maxTextId + 1,
+        localId: `split-${Date.now()}-${Math.random()}`,
+        originalContents: source.contents,
+        splitSourceCardId: source.card_id,
+      };
+      next.splice(index + 1, 0, newItem);
+      setContextSplits((current) => [
+        ...current,
+        { source_card_id: source.card_id, temp_id: newItem.localId },
+      ]);
+      return next;
+    });
+  };
+
+  const handleContextSave = async () => {
+    setContextSaveState({ status: "saving", message: "" });
+    const editedItems = contextEdits
+      .filter(
+        (item) =>
+          item.card_id &&
+          item.contents !== item.originalContents
+      )
+      .map((item) => ({ card_id: item.card_id, contents: item.contents }));
+    const splitItems = contextSplits.map((split) => {
+      const splitTarget = contextEdits.find(
+        (item) => item.localId === split.temp_id
+      );
+      return {
+        source_card_id: split.source_card_id,
+        contents: splitTarget?.contents ?? "",
+      };
+    });
+    try {
+      const res = await fetch(`${apiBase}/cards/context:save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: editedItems,
+          merges: contextMerges,
+          splits: splitItems,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail || "保存に失敗しました。");
+      }
+      const refresh = await fetch(`${apiBase}/cards/${cardId}`);
+      const data = await refresh.json();
+      setCard(data.card);
+      setContext(data.context_messages || { items: [] });
+      setContextEdits(
+        (data.context_messages?.items || []).map((item) => ({
+          ...item,
+          localId: `card-${item.card_id}`,
+          originalContents: item.contents,
+        }))
+      );
+      setContextMerges([]);
+      setContextSplits([]);
+      setContextSaveState({ status: "success", message: "保存しました。" });
+    } catch (error) {
+      setContextSaveState({
+        status: "error",
+        message: error.message || "保存に失敗しました。",
+      });
+    }
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -150,35 +296,83 @@ export default function CardDetailPage() {
         <details className="accordion" close>
           <summary>前後メッセージ</summary>
           <div className="accordion-body">
-            {contextItems.length === 0 ? (
+            {contextEdits.length === 0 ? (
               <p className="empty">前後メッセージがありません。</p>
             ) : (
               <div className="card-grid">
-                {contextItems.map((item, index) => {
+                {contextEdits.map((item, index) => {
                   const showDivider =
                     index > 0 &&
-                    contextItems[index - 1].message_id !== item.message_id;
+                    contextEdits[index - 1].message_id !== item.message_id;
+                  const isFirstInMessage =
+                    minTextIdByMessage[item.message_id] === item.text_id;
+                  const previousIndex = findPreviousIndex(contextEdits, index);
+                  const previousItem =
+                    previousIndex >= 0 ? contextEdits[previousIndex] : null;
+                  const canMerge = Boolean(
+                    previousItem?.card_id && item.card_id
+                  );
                   return (
-                    <div key={item.card_id} className="context-card-wrapper">
+                    <div key={item.localId} className="context-card-wrapper">
                       {showDivider && <div className="preview-divider" />}
-                      <Link
-                        to={`/cards/${item.card_id}`}
-                        className={`card card-link${
+                      <div
+                        className={`card${
                           item.card_id === card.card_id ? " card-highlight" : ""
                         }`}
                       >
                         <div className="card-row">
-                          <span className="card-summary-text">
-                            {item.speaker_name || "-"}：{item.contents || ""}
+                          <span className="card-title">
+                            {item.speaker_name || "-"}：
                           </span>
                           <span className="card-role">
                             {item.card_role_name || "未設定"}
                           </span>
                         </div>
-                      </Link>
+                        <textarea
+                          className="form-textarea"
+                          value={item.contents ?? ""}
+                          onChange={(event) =>
+                            handleContextContentChange(
+                              item.localId,
+                              event.target.value
+                            )
+                          }
+                        />
+                        <div className="preview-actions">
+                          <button
+                            type="button"
+                            onClick={() => handleMergeUp(index)}
+                            disabled={!canMerge}
+                          >
+                            上に統合
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSplitDown(index)}
+                            disabled={!item.card_id}
+                          >
+                            下に分割
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {contextEdits.length > 0 && (
+              <div className="inline-actions">
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={handleContextSave}
+                  disabled={contextSaveState.status === "saving"}
+                >
+                  保存
+                </button>
+                {contextSaveState.message && (
+                  <span className="empty">{contextSaveState.message}</span>
+                )}
               </div>
             )}
           </div>
