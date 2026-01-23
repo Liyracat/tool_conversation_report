@@ -313,32 +313,16 @@ def _generate_split_key(conn: sqlite3.Connection, source_row: dict) -> str:
             return False
         return True
 
-    if second_digit != 0:
-        next_second = second_digit + 1
-        if next_second >= 10:
-            raise HTTPException(status_code=400, detail="分割可能回数を超えました")
-        candidate_tuple = (first_digit, next_second)
-        candidate = _format_split_key(head, first_digit, next_second)
-        if not candidate_ok(candidate_tuple, candidate):
-            if candidate in existing_key_set:
-                raise HTTPException(status_code=400, detail="split_keyが重複しています")
-            raise HTTPException(status_code=400, detail="分割可能回数を超えました")
-        return candidate
+    for first in range(first_digit, 10):
+        start_second = second_digit + 1 if first == first_digit else 0
+        for second in range(start_second, 10):
+            candidate_tuple = (first, second)
+            if next_tuple is not None and candidate_tuple >= next_tuple:
+                raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+            candidate = _format_split_key(head, first, second)
+            if candidate_ok(candidate_tuple, candidate):
+                return candidate
 
-    next_first = first_digit + 1
-    if next_first >= 10:
-        raise HTTPException(status_code=400, detail="分割可能回数を超えました")
-    primary_tuple = (next_first, 0)
-    primary_candidate = _format_split_key(head, next_first, 0)
-    if candidate_ok(primary_tuple, primary_candidate):
-        return primary_candidate
-
-    fallback_tuple = (first_digit, 1)
-    fallback_candidate = _format_split_key(head, first_digit, 1)
-    if candidate_ok(fallback_tuple, fallback_candidate):
-        return fallback_candidate
-    if fallback_candidate in existing_key_set or primary_candidate in existing_key_set:
-        raise HTTPException(status_code=400, detail="split_keyが重複しています")
     raise HTTPException(status_code=400, detail="分割可能回数を超えました")
 
 
