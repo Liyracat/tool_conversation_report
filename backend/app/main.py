@@ -269,67 +269,39 @@ async def update_card(card_id: int, payload: CardUpdate) -> dict:
     return {"card_id": card_id}
 
 
-def _normalize_split_key(split_key: str) -> tuple[str, int, int]:
-    head, _, tail = split_key.partition(".")
-    tail = (tail + "00")[:2]
-    return head, int(tail[0]), int(tail[1])
-
-
-def _format_split_key(head: str, first_digit: int, second_digit: int) -> str:
-    return f"{head}.{first_digit}{second_digit}"
-
-
-def _generate_split_key(conn: sqlite3.Connection, source_row: dict) -> str:
-    head, first_digit, second_digit = _normalize_split_key(source_row["split_key"])
-    prefix = f"{head}."
-    existing_keys = []
-    for row in fetch_all(
-        conn,
-        """
-        SELECT split_key
-        FROM cards
-        WHERE thread_id = :thread_id
-          AND message_id = :message_id
-          AND split_key LIKE :prefix;
-        """,
-        {
-            "thread_id": source_row["thread_id"],
-            "message_id": source_row["message_id"],
-            "prefix": f"{prefix}%",
-        },
-    ):
-        existing_keys.append(row["split_key"])
-    existing_key_set = set(existing_keys)
-    existing_tuples = sorted(
-        (_normalize_split_key(key)[1:], key) for key in existing_keys if key.startswith(prefix)
-    )
-    current_tuple = (first_digit, second_digit)
-    next_tuple = next((digits for digits, _ in existing_tuples if digits > current_tuple), None)
-
-    def candidate_ok(candidate_tuple: tuple[int, int], candidate_key: str) -> bool:
-        if candidate_key in existing_key_set:
-            return False
-        if next_tuple is not None and candidate_tuple >= next_tuple:
-            return False
-        return True
-
-    for first in range(first_digit, 10):
-        start_second = second_digit + 1 if first == first_digit else 0
-        for second in range(start_second, 10):
-            candidate_tuple = (first, second)
-            if next_tuple is not None and candidate_tuple >= next_tuple:
-                raise HTTPException(status_code=400, detail="分割可能回数を超えました")
-            candidate = _format_split_key(head, first, second)
-            if candidate_ok(candidate_tuple, candidate):
-                return candidate
-
-    raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+def _assign_split_keys(
+    conn: sqlite3.Connection,
+    order_items: Iterable[dict[str, Any]],
+    temp_id_map: dict[str, int],
+) -> None:
+    grouped: dict[int, list[int]] = {}
+    for item in order_items:
+        message_id = item["message_id"]
+        card_id = item.get("card_id")
+        if card_id is None and item.get("temp_id"):
+            card_id = temp_id_map.get(item["temp_id"])
+        if card_id is None:
+            continue
+        grouped.setdefault(message_id, []).append(card_id)
+    for message_id, ordered_ids in grouped.items():
+        for index, card_id in enumerate(ordered_ids, start=1):
+            conn.execute(
+                """
+                UPDATE cards
+                SET split_key = :split_key,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE card_id = :card_id
+                  AND message_id = :message_id;
+                """,
+                {"split_key": index, "card_id": card_id, "message_id": message_id},
+            )
 
 
 @app.post("/cards/context:save")
 async def save_context_edits(payload: ContextSaveRequest) -> dict:
     edited_map = {item.card_id: item.contents for item in payload.items}
     split_sources = {split.source_card_id for split in payload.splits}
+    temp_id_map: dict[str, int] = {}
     with db_session() as conn:
         for card_id, contents in edited_map.items():
             conn.execute(
@@ -425,8 +397,7 @@ async def save_context_edits(payload: ContextSaveRequest) -> dict:
                 )["max_text_id"]
                 + 1
             )
-            new_split_key = _generate_split_key(conn, source_row)
-            conn.execute(
+            cur = conn.execute(
                 """
                 INSERT INTO cards (
                   thread_id,
@@ -465,7 +436,7 @@ async def save_context_edits(payload: ContextSaveRequest) -> dict:
                     "thread_id": source_row["thread_id"],
                     "message_id": source_row["message_id"],
                     "text_id": new_text_id,
-                    "split_key": new_split_key,
+                    "split_key": new_text_id,
                     "split_version": source_row["split_version"],
                     "speaker_id": source_row["speaker_id"],
                     "conversation_at": source_row["conversation_at"],
@@ -473,6 +444,12 @@ async def save_context_edits(payload: ContextSaveRequest) -> dict:
                     "visibility": source_row["visibility"],
                 },
             )
+            if split.temp_id:
+                temp_id_map[split.temp_id] = cur.lastrowid
+
+        if (payload.merges or payload.splits) and payload.order:
+            order_items = [item.dict() for item in payload.order]
+            _assign_split_keys(conn, order_items, temp_id_map)
 
     return {"saved": True}
 
@@ -763,7 +740,7 @@ async def import_commit(payload: ImportCommitRequest) -> dict:
     created_ids: list[int] = []
     with db_session() as conn:
         for part in payload.parts:
-            split_key = f"{part['text_id']:05d}.00"
+            split_key = part["text_id"]
             cur = conn.execute(
                 """
                 INSERT INTO cards (

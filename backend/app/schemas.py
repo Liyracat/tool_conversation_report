@@ -49,7 +49,7 @@ class CardUpdate(BaseModel):
     thread_id: Optional[str] = None
     message_id: Optional[int] = None
     text_id: Optional[int] = None
-    split_key: Optional[str] = None
+    split_key: Optional[int] = None
     split_version: Optional[int] = None
     speaker_id: Optional[int] = None
     conversation_at: Optional[str] = None
@@ -84,12 +84,20 @@ class ContextMergeOperation(BaseModel):
 class ContextSplitOperation(BaseModel):
     source_card_id: int
     contents: str
+    temp_id: Optional[str] = None
+
+
+class ContextOrderItem(BaseModel):
+    message_id: int
+    card_id: Optional[int] = None
+    temp_id: Optional[str] = None
 
 
 class ContextSaveRequest(BaseModel):
     items: list[ContextSaveItem] = Field(default_factory=list)
     merges: list[ContextMergeOperation] = Field(default_factory=list)
     splits: list[ContextSplitOperation] = Field(default_factory=list)
+    order: list[ContextOrderItem] = Field(default_factory=list)
 
 
 class LinkCounts(BaseModel):
