@@ -83,6 +83,21 @@ body {
   gap: 16px;
 }
 
+.card-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-summary-label {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #4b5563;
+}
+
 .card-summary-text {
   flex: 1;
   min-width: 0;

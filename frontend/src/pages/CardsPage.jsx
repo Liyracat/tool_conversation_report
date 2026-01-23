@@ -85,9 +85,12 @@ export default function CardsPage() {
               className="card card-link"
             >
               <div className="card-row">
-                <span className="card-summary-text">
-                  {card.speaker_name || "-"}：{card.contents || ""}
-                </span>
+                <div className="card-summary">
+                  <span className="card-summary-label">
+                    {card.speaker_name || "-"}：
+                  </span>
+                  <span className="card-summary-text">{card.contents || ""}</span>
+                </div>
                 <span className="card-role">{card.card_role_name || "未設定"}</span>
               </div>
             </Link>
