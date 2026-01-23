@@ -174,55 +174,39 @@ async def get_card(card_id: int, context_prev_messages: int = 2, context_next_me
             WHERE card_id = :card_id;
         """
         key = fetch_one(conn, key_query, {"card_id": card_id})
-        prev_query = """
-            SELECT c.card_id, c.text_id, c.contents, cr.minor_name AS card_role_name
+        message_id = key["message_id"]
+        context_query = """
+            SELECT
+              c.card_id,
+              c.message_id,
+              c.text_id,
+              c.contents,
+              c.speaker_id,
+              s.speaker_name,
+              cr.minor_name AS card_role_name
             FROM cards c
+            LEFT JOIN speakers s ON s.speaker_id = c.speaker_id
             LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
             WHERE c.thread_id = :thread_id
-              AND c.message_id = :message_id
               AND c.split_version = :split_version
-              AND c.text_id < :text_id
-            ORDER BY c.text_id DESC
-            LIMIT :limit;
+              AND c.message_id IN (:prev_message_id, :message_id, :next_message_id)
+            ORDER BY c.message_id ASC, c.text_id ASC;
         """
-        prev_items = fetch_all(
+        context_items = fetch_all(
             conn,
-            prev_query,
+            context_query,
             {
                 "thread_id": key["thread_id"],
-                "message_id": key["message_id"],
                 "split_version": key["split_version"],
-                "text_id": key["text_id"],
-                "limit": context_prev_messages,
-            },
-        )
-        prev_items = list(reversed(prev_items))
-        next_query = """
-            SELECT c.card_id, c.text_id, c.contents, cr.minor_name AS card_role_name
-            FROM cards c
-            LEFT JOIN card_roles cr ON cr.card_role_id = c.card_role_id
-            WHERE c.thread_id = :thread_id
-              AND c.message_id = :message_id
-              AND c.split_version = :split_version
-              AND c.text_id > :text_id
-            ORDER BY c.text_id ASC
-            LIMIT :limit;
-        """
-        next_items = fetch_all(
-            conn,
-            next_query,
-            {
-                "thread_id": key["thread_id"],
-                "message_id": key["message_id"],
-                "split_version": key["split_version"],
-                "text_id": key["text_id"],
-                "limit": context_next_messages,
+                "prev_message_id": message_id - 1,
+                "message_id": message_id,
+                "next_message_id": message_id + 1,
             },
         )
 
     return {
         "card": card,
-        "context_messages": {"prev": prev_items, "next": next_items},
+        "context_messages": {"items": context_items},
     }
 
 
@@ -236,24 +220,45 @@ async def update_card(card_id: int, payload: CardUpdate) -> dict:
             """
             UPDATE cards
             SET
+              thread_id = COALESCE(:thread_id, thread_id),
+              message_id = COALESCE(:message_id, message_id),
+              text_id = COALESCE(:text_id, text_id),
+              split_key = COALESCE(:split_key, split_key),
+              split_version = COALESCE(:split_version, split_version),
+              speaker_id = COALESCE(:speaker_id, speaker_id),
+              conversation_at = COALESCE(:conversation_at, conversation_at),
               contents = COALESCE(:contents, contents),
-              visibility = COALESCE(:visibility, visibility),
-              card_role_id = COALESCE(:card_role_id, card_role_id),
-              card_role_confidence = CASE
-                WHEN :card_role_id IS NOT NULL THEN NULL
-                ELSE card_role_confidence
-              END,
               is_edited = CASE
+                WHEN :is_edited IS NOT NULL THEN :is_edited
                 WHEN :contents IS NOT NULL THEN 1
                 ELSE is_edited
               END,
-              updated_at = CURRENT_TIMESTAMP
+              visibility = COALESCE(:visibility, visibility),
+              card_role_id = COALESCE(:card_role_id, card_role_id),
+              card_role_confidence = CASE
+                WHEN :card_role_confidence IS NOT NULL THEN :card_role_confidence
+                WHEN :card_role_id IS NOT NULL THEN NULL
+                ELSE card_role_confidence
+              END,
+              created_at = COALESCE(:created_at, created_at),
+              updated_at = COALESCE(:updated_at, CURRENT_TIMESTAMP)
             WHERE card_id = :card_id;
             """,
             {
+                "thread_id": payload.thread_id,
+                "message_id": payload.message_id,
+                "text_id": payload.text_id,
+                "split_key": payload.split_key,
+                "split_version": payload.split_version,
+                "speaker_id": payload.speaker_id,
+                "conversation_at": payload.conversation_at,
                 "contents": payload.contents,
+                "is_edited": payload.is_edited,
                 "visibility": payload.visibility,
                 "card_role_id": payload.card_role_id,
+                "card_role_confidence": payload.card_role_confidence,
+                "created_at": payload.created_at,
+                "updated_at": payload.updated_at,
                 "card_id": card_id,
             },
         )

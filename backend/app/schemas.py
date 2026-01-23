@@ -46,9 +46,20 @@ class CardDetail(BaseModel):
 
 
 class CardUpdate(BaseModel):
+    thread_id: Optional[str] = None
+    message_id: Optional[int] = None
+    text_id: Optional[int] = None
+    split_key: Optional[str] = None
+    split_version: Optional[int] = None
+    speaker_id: Optional[int] = None
+    conversation_at: Optional[str] = None
     contents: Optional[str] = None
+    is_edited: Optional[int] = None
     visibility: Optional[Visibility] = None
     card_role_id: Optional[int] = None
+    card_role_confidence: Optional[float] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 
 class RoleRecomputeResponse(BaseModel):
