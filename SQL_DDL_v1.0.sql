@@ -62,7 +62,7 @@ CREATE TABLE IF NOT EXISTS cards (
   thread_id              TEXT NOT NULL,      -- UUID文字列
   message_id             INTEGER NOT NULL,   -- 1,2,3... (ログ確定の想定)
   text_id                INTEGER NOT NULL,   -- 1,2,3... (疎でもOK)
-  split_key              TEXT NOT NULL,      -- NNNNN.SS
+  split_key              INTEGER NOT NULL,   -- 1,2,3...（ソート用）
 
   split_version          INTEGER NOT NULL DEFAULT 1,
 
