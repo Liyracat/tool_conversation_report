@@ -54,22 +54,34 @@ export default function CardDetailPage() {
         <div className="card-grid">
           {context.prev.map((item) => (
             <div key={item.card_id} className="card">
-        <div className="card-row">
-          <span className="card-summary-text">
-            {item.speaker_name || "-"}：{item.contents || ""}
-          </span>
-          <span className="card-role">{item.card_role_name || "未設定"}</span>
-        </div>
+            <Link
+              key={item.card_id}
+              to={`/cards/${item.card_id}`}
+              className="card card-link"
+            >
+              <div className="card-row">
+                <span className="card-summary-text">
+                  {item.speaker_name || "-"}：{item.contents || ""}
+                </span>
+                <span className="card-role">{item.card_role_name || "未設定"}</span>
+              </div>
+            </Link>
             </div>
           ))}
           {context.next.map((item) => (
             <div key={item.card_id} className="card">
-        <div className="card-row">
-          <span className="card-summary-text">
-            {item.speaker_name || "-"}：{item.contents || ""}
-          </span>
-          <span className="card-role">{item.card_role_name || "未設定"}</span>
-        </div>
+            <Link
+              key={item.card_id}
+              to={`/cards/${item.card_id}`}
+              className="card card-link"
+            >
+              <div className="card-row">
+                <span className="card-summary-text">
+                  {item.speaker_name || "-"}：{item.contents || ""}
+                </span>
+                <span className="card-role">{item.card_role_name || "未設定"}</span>
+              </div>
+            </Link>
             </div>
           ))}
         </div>
