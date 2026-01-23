@@ -281,35 +281,65 @@ def _format_split_key(head: str, first_digit: int, second_digit: int) -> str:
 
 def _generate_split_key(conn: sqlite3.Connection, source_row: dict) -> str:
     head, first_digit, second_digit = _normalize_split_key(source_row["split_key"])
-    existing_keys = {
-        row["split_key"]
-        for row in fetch_all(
-            conn,
-            """
-            SELECT split_key
-            FROM cards
-            WHERE thread_id = :thread_id
-              AND message_id = :message_id;
-            """,
-            {"thread_id": source_row["thread_id"], "message_id": source_row["message_id"]},
-        )
-    }
+    prefix = f"{head}."
+    existing_keys = []
+    for row in fetch_all(
+        conn,
+        """
+        SELECT split_key
+        FROM cards
+        WHERE thread_id = :thread_id
+          AND message_id = :message_id
+          AND split_key LIKE :prefix;
+        """,
+        {
+            "thread_id": source_row["thread_id"],
+            "message_id": source_row["message_id"],
+            "prefix": f"{prefix}%",
+        },
+    ):
+        existing_keys.append(row["split_key"])
+    existing_key_set = set(existing_keys)
+    existing_tuples = sorted(
+        (_normalize_split_key(key)[1:], key) for key in existing_keys if key.startswith(prefix)
+    )
+    current_tuple = (first_digit, second_digit)
+    next_tuple = next((digits for digits, _ in existing_tuples if digits > current_tuple), None)
+
+    def candidate_ok(candidate_tuple: tuple[int, int], candidate_key: str) -> bool:
+        if candidate_key in existing_key_set:
+            return False
+        if next_tuple is not None and candidate_tuple >= next_tuple:
+            return False
+        return True
+
     if second_digit != 0:
         next_second = second_digit + 1
         if next_second >= 10:
             raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+        candidate_tuple = (first_digit, next_second)
         candidate = _format_split_key(head, first_digit, next_second)
-        if candidate in existing_keys:
+        if not candidate_ok(candidate_tuple, candidate):
+            if candidate in existing_key_set:
+                raise HTTPException(status_code=400, detail="split_keyが重複しています")
             raise HTTPException(status_code=400, detail="分割可能回数を超えました")
         return candidate
 
     next_first = first_digit + 1
     if next_first >= 10:
         raise HTTPException(status_code=400, detail="分割可能回数を超えました")
-    candidate = _format_split_key(head, next_first, 0)
-    if candidate not in existing_keys:
-        return candidate
-    return _format_split_key(head, first_digit, 1)
+    primary_tuple = (next_first, 0)
+    primary_candidate = _format_split_key(head, next_first, 0)
+    if candidate_ok(primary_tuple, primary_candidate):
+        return primary_candidate
+
+    fallback_tuple = (first_digit, 1)
+    fallback_candidate = _format_split_key(head, first_digit, 1)
+    if candidate_ok(fallback_tuple, fallback_candidate):
+        return fallback_candidate
+    if fallback_candidate in existing_key_set or primary_candidate in existing_key_set:
+        raise HTTPException(status_code=400, detail="split_keyが重複しています")
+    raise HTTPException(status_code=400, detail="分割可能回数を超えました")
 
 
 @app.post("/cards/context:save")
