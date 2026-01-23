@@ -53,18 +53,18 @@ export default function CardsPage() {
           value={filters.visibility}
           onChange={(event) => setFilters({ ...filters, visibility: event.target.value })}
         >
-          <option value="normal">normal</option>
-          <option value="hidden">hidden</option>
-          <option value="archived">archived</option>
+          <option value="normal">表示</option>
+          <option value="hidden">非表示</option>
+          <option value="archived">アーカイブ</option>
         </select>
         <select
           value={filters.sort_by}
           onChange={(event) => setFilters({ ...filters, sort_by: event.target.value })}
         >
-          <option value="conversation_at">conversation_at</option>
-          <option value="created_at">created_at</option>
-          <option value="card_role_confidence">card_role_confidence</option>
-          <option value="updated_at">updated_at</option>
+          <option value="conversation_at">投稿日時</option>
+          <option value="card_role_confidence">カード役割設定信頼度</option>
+          <option value="created_at">作成日時</option>
+          <option value="updated_at">更新日時</option>
         </select>
         <select
           value={filters.sort_dir}
@@ -85,10 +85,6 @@ export default function CardsPage() {
                 <span> {card.speaker_name || "-"}</span>
               </div>
               <div className="card-body">{card.contents}</div>
-              <div className="section">
-                <span className="badge">{card.visibility}</span>
-                <span className="empty"> {card.conversation_at}</span>
-              </div>
               <div className="section">
                 <Link to={`/cards/${card.card_id}`}>詳細を開く</Link>
               </div>
