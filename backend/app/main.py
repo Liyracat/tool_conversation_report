@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+import sqlite3
 from typing import Any, Dict, Iterable, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response
@@ -11,6 +12,7 @@ from app.schemas import (
     CardDetail,
     CardListItem,
     CardUpdate,
+    ContextSaveRequest,
     CreateCardRole,
     CreateLinkKind,
     CreateMajorItem,
@@ -180,6 +182,7 @@ async def get_card(card_id: int, context_prev_messages: int = 2, context_next_me
               c.card_id,
               c.message_id,
               c.text_id,
+              c.split_key,
               c.contents,
               c.speaker_id,
               s.speaker_name,
@@ -190,7 +193,7 @@ async def get_card(card_id: int, context_prev_messages: int = 2, context_next_me
             WHERE c.thread_id = :thread_id
               AND c.split_version = :split_version
               AND c.message_id IN (:prev_message_id, :message_id, :next_message_id)
-            ORDER BY c.message_id ASC, c.text_id ASC;
+            ORDER BY c.message_id ASC, c.split_key ASC;
         """
         context_items = fetch_all(
             conn,
@@ -264,6 +267,200 @@ async def update_card(card_id: int, payload: CardUpdate) -> dict:
         )
 
     return {"card_id": card_id}
+
+
+def _normalize_split_key(split_key: str) -> tuple[str, int, int]:
+    head, _, tail = split_key.partition(".")
+    tail = (tail + "00")[:2]
+    return head, int(tail[0]), int(tail[1])
+
+
+def _format_split_key(head: str, first_digit: int, second_digit: int) -> str:
+    return f"{head}.{first_digit}{second_digit}"
+
+
+def _generate_split_key(conn: sqlite3.Connection, source_row: dict) -> str:
+    head, first_digit, second_digit = _normalize_split_key(source_row["split_key"])
+    existing_keys = {
+        row["split_key"]
+        for row in fetch_all(
+            conn,
+            """
+            SELECT split_key
+            FROM cards
+            WHERE thread_id = :thread_id
+              AND message_id = :message_id;
+            """,
+            {"thread_id": source_row["thread_id"], "message_id": source_row["message_id"]},
+        )
+    }
+    if second_digit != 0:
+        next_second = second_digit + 1
+        if next_second >= 10:
+            raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+        candidate = _format_split_key(head, first_digit, next_second)
+        if candidate in existing_keys:
+            raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+        return candidate
+
+    next_first = first_digit + 1
+    if next_first >= 10:
+        raise HTTPException(status_code=400, detail="分割可能回数を超えました")
+    candidate = _format_split_key(head, next_first, 0)
+    if candidate not in existing_keys:
+        return candidate
+    return _format_split_key(head, first_digit, 1)
+
+
+@app.post("/cards/context:save")
+async def save_context_edits(payload: ContextSaveRequest) -> dict:
+    edited_map = {item.card_id: item.contents for item in payload.items}
+    split_sources = {split.source_card_id for split in payload.splits}
+    with db_session() as conn:
+        for card_id, contents in edited_map.items():
+            conn.execute(
+                """
+                UPDATE cards
+                SET contents = :contents,
+                    is_edited = 1,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE card_id = :card_id;
+                """,
+                {"card_id": card_id, "contents": contents},
+            )
+
+        for merge in payload.merges:
+            target_contents = edited_map.get(merge.target_card_id)
+            if target_contents is None:
+                target = fetch_one(
+                    conn,
+                    "SELECT contents FROM cards WHERE card_id = :card_id;",
+                    {"card_id": merge.target_card_id},
+                )
+                source = fetch_one(
+                    conn,
+                    "SELECT contents FROM cards WHERE card_id = :card_id;",
+                    {"card_id": merge.source_card_id},
+                )
+                if not target or not source:
+                    raise HTTPException(status_code=404, detail="Card not found")
+                target_contents = f"{target['contents']}\n{source['contents']}"
+            conn.execute(
+                """
+                UPDATE cards
+                SET contents = :contents,
+                    is_edited = 1,
+                    card_role_id = NULL,
+                    card_role_confidence = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE card_id = :card_id;
+                """,
+                {"card_id": merge.target_card_id, "contents": target_contents},
+            )
+            conn.execute(
+                "DELETE FROM cards WHERE card_id = :card_id",
+                {"card_id": merge.source_card_id},
+            )
+
+        for source_card_id in split_sources:
+            contents_override = edited_map.get(source_card_id)
+            if contents_override is None:
+                conn.execute(
+                    """
+                    UPDATE cards
+                    SET is_edited = 1,
+                        card_role_id = NULL,
+                        card_role_confidence = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE card_id = :card_id;
+                    """,
+                    {"card_id": source_card_id},
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE cards
+                    SET contents = :contents,
+                        is_edited = 1,
+                        card_role_id = NULL,
+                        card_role_confidence = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE card_id = :card_id;
+                    """,
+                    {"card_id": source_card_id, "contents": contents_override},
+                )
+
+        for split in payload.splits:
+            source_row = fetch_one(
+                conn,
+                "SELECT * FROM cards WHERE card_id = :card_id;",
+                {"card_id": split.source_card_id},
+            )
+            if not source_row:
+                raise HTTPException(status_code=404, detail="Card not found")
+            new_text_id = (
+                fetch_one(
+                    conn,
+                    """
+                    SELECT COALESCE(MAX(text_id), 0) AS max_text_id
+                    FROM cards
+                    WHERE thread_id = :thread_id
+                      AND message_id = :message_id;
+                    """,
+                    {"thread_id": source_row["thread_id"], "message_id": source_row["message_id"]},
+                )["max_text_id"]
+                + 1
+            )
+            new_split_key = _generate_split_key(conn, source_row)
+            conn.execute(
+                """
+                INSERT INTO cards (
+                  thread_id,
+                  message_id,
+                  text_id,
+                  split_key,
+                  split_version,
+                  speaker_id,
+                  conversation_at,
+                  contents,
+                  is_edited,
+                  card_role_id,
+                  card_role_confidence,
+                  visibility,
+                  created_at,
+                  updated_at
+                )
+                VALUES (
+                  :thread_id,
+                  :message_id,
+                  :text_id,
+                  :split_key,
+                  :split_version,
+                  :speaker_id,
+                  :conversation_at,
+                  :contents,
+                  1,
+                  NULL,
+                  NULL,
+                  :visibility,
+                  CURRENT_TIMESTAMP,
+                  CURRENT_TIMESTAMP
+                );
+                """,
+                {
+                    "thread_id": source_row["thread_id"],
+                    "message_id": source_row["message_id"],
+                    "text_id": new_text_id,
+                    "split_key": new_split_key,
+                    "split_version": source_row["split_version"],
+                    "speaker_id": source_row["speaker_id"],
+                    "conversation_at": source_row["conversation_at"],
+                    "contents": split.contents,
+                    "visibility": source_row["visibility"],
+                },
+            )
+
+    return {"saved": True}
 
 
 @app.post("/cards/{card_id}/role:recompute", status_code=202)

@@ -71,6 +71,27 @@ class MergeResponse(BaseModel):
     deleted_card_id: int
 
 
+class ContextSaveItem(BaseModel):
+    card_id: int
+    contents: str
+
+
+class ContextMergeOperation(BaseModel):
+    source_card_id: int
+    target_card_id: int
+
+
+class ContextSplitOperation(BaseModel):
+    source_card_id: int
+    contents: str
+
+
+class ContextSaveRequest(BaseModel):
+    items: list[ContextSaveItem] = Field(default_factory=list)
+    merges: list[ContextMergeOperation] = Field(default_factory=list)
+    splits: list[ContextSplitOperation] = Field(default_factory=list)
+
+
 class LinkCounts(BaseModel):
     supports: int = 0
     contradicts: int = 0
