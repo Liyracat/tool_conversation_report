@@ -116,7 +116,7 @@ export default function CardDetailPage() {
       thread_id: detailForm.thread_id || null,
       message_id: toNullableNumber(detailForm.message_id),
       text_id: toNullableNumber(detailForm.text_id),
-      split_key: detailForm.split_key || null,
+      split_key: toNullableNumber(detailForm.split_key),
       split_version: toNullableNumber(detailForm.split_version),
       speaker_id: toNullableNumber(detailForm.speaker_id),
       conversation_at: detailForm.conversation_at || null,
@@ -248,9 +248,15 @@ export default function CardDetailPage() {
         {
           source_card_id: split.source_card_id,
           contents: splitTarget.contents ?? "",
+          temp_id: split.temp_id,
         },
       ];
     });
+    const orderItems = contextEdits.map((item) => ({
+      message_id: item.message_id,
+      card_id: item.card_id ?? null,
+      temp_id: item.card_id ? null : item.localId,
+    }));
     try {
       const res = await fetch(`${apiBase}/cards/context:save`, {
         method: "POST",
@@ -259,6 +265,7 @@ export default function CardDetailPage() {
           items: editedItems,
           merges: contextMerges,
           splits: splitItems,
+          order: orderItems,
         }),
       });
       if (!res.ok) {
@@ -440,6 +447,7 @@ export default function CardDetailPage() {
                   split_key
                   <input
                     className="form-input"
+                    type="number"
                     value={detailForm?.split_key ?? ""}
                     onChange={(event) =>
                       handleDetailChange("split_key", event.target.value)
