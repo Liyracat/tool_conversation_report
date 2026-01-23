@@ -86,7 +86,7 @@ body {
 .card-summary-text {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
+  white-space: pre-wrap;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 14px;
