@@ -17,6 +17,12 @@ export default function CardDetailPage() {
     status: "idle",
     message: "",
   });
+  const getRowCount = (value) => Math.max(1, value.split("\n").length);
+  const resizeTextarea = (element) => {
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${element.scrollHeight}px`;
+  };
 
   useEffect(() => {
     const loadCard = async () => {
@@ -76,6 +82,10 @@ export default function CardDetailPage() {
     loadCard();
     loadLinks();
   }, [cardId]);
+
+  useEffect(() => {
+    document.querySelectorAll(".context-textarea").forEach(resizeTextarea);
+  }, [contextEdits]);
 
   if (!card) {
     return <p className="empty">カード詳細を読み込み中...</p>;
@@ -229,14 +239,17 @@ export default function CardDetailPage() {
           item.contents !== item.originalContents
       )
       .map((item) => ({ card_id: item.card_id, contents: item.contents }));
-    const splitItems = contextSplits.map((split) => {
+    const splitItems = contextSplits.flatMap((split) => {
       const splitTarget = contextEdits.find(
         (item) => item.localId === split.temp_id
       );
-      return {
-        source_card_id: split.source_card_id,
-        contents: splitTarget?.contents ?? "",
-      };
+      if (!splitTarget) return [];
+      return [
+        {
+          source_card_id: split.source_card_id,
+          contents: splitTarget.contents ?? "",
+        },
+      ];
     });
     try {
       const res = await fetch(`${apiBase}/cards/context:save`, {
@@ -320,39 +333,45 @@ export default function CardDetailPage() {
                           item.card_id === card.card_id ? " card-highlight" : ""
                         }`}
                       >
-                        <div className="card-row">
-                          <span className="card-title">
-                            {item.speaker_name || "-"}：
-                          </span>
-                          <span className="card-role">
-                            {item.card_role_name || "未設定"}
-                          </span>
-                        </div>
-                        <textarea
-                          className="form-textarea"
-                          value={item.contents ?? ""}
-                          onChange={(event) =>
-                            handleContextContentChange(
-                              item.localId,
-                              event.target.value
-                            )
-                          }
-                        />
-                        <div className="preview-actions">
-                          <button
-                            type="button"
-                            onClick={() => handleMergeUp(index)}
-                            disabled={!canMerge}
-                          >
-                            上に統合
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSplitDown(index)}
-                            disabled={!item.card_id}
-                          >
-                            下に分割
-                          </button>
+                        <div className="context-card-row">
+                          <div className="context-content">
+                            <span className="card-title">
+                              {item.speaker_name || "-"}：
+                            </span>
+                            <textarea
+                              className="form-textarea context-textarea"
+                              rows={getRowCount(item.contents ?? "")}
+                              value={item.contents ?? ""}
+                              onChange={(event) =>
+                                handleContextContentChange(
+                                  item.localId,
+                                  event.target.value
+                                )
+                              }
+                              onInput={(event) => resizeTextarea(event.target)}
+                            />
+                          </div>
+                          <div className="context-meta">
+                            <span className="card-role">
+                              {item.card_role_name || "未設定"}
+                            </span>
+                            <div className="context-actions">
+                              <button
+                                type="button"
+                                onClick={() => handleMergeUp(index)}
+                                disabled={!canMerge}
+                              >
+                                上に結合
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSplitDown(index)}
+                                disabled={!item.card_id}
+                              >
+                                下に分割
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
