@@ -166,9 +166,6 @@ CREATE TABLE IF NOT EXISTS link_suggestions (
                       'rejected'      -- 却下
                     )),
 
-  attempts          INTEGER NOT NULL DEFAULT 0,
-  last_error        TEXT,
-
   -- 監査用
   created_at        TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
   updated_at        TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
