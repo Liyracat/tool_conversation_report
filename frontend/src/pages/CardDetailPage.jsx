@@ -350,7 +350,11 @@ export default function CardDetailPage() {
                         <div className="context-card-row">
                           <div className="context-content">
                             <span className="card-title">
-                              {item.speaker_name || "-"}：
+                              <Link
+                                key={item.card_id}
+                                to={`/cards/${item.card_id}`}
+                                className="card-link"
+                              >{item.speaker_name || "-"}：</Link>
                             </span>
                             <textarea
                               className="form-textarea context-textarea"
