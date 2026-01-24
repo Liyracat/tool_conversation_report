@@ -111,6 +111,10 @@ export default function CardDetailPage() {
 
   const handleSave = async () => {
     if (!detailForm) return;
+    const originalContents = card?.contents ?? "";
+    const currentContents = detailForm.contents ?? "";
+    const contentsChanged = originalContents !== currentContents;
+    const updatedAtValue = contentsChanged ? null : card?.updated_at ?? null;
     setSaveState({ status: "saving", message: "" });
     const payload = {
       thread_id: detailForm.thread_id || null,
@@ -121,12 +125,12 @@ export default function CardDetailPage() {
       speaker_id: toNullableNumber(detailForm.speaker_id),
       conversation_at: detailForm.conversation_at || null,
       contents: detailForm.contents ?? "",
-      is_edited: toNullableNumber(detailForm.is_edited),
+      is_edited: contentsChanged ? 1 : toNullableNumber(detailForm.is_edited),
       card_role_id: toNullableNumber(detailForm.card_role_id),
       card_role_confidence: toNullableNumber(detailForm.card_role_confidence),
       visibility: detailForm.visibility || null,
       created_at: detailForm.created_at || null,
-      updated_at: detailForm.updated_at || null,
+      updated_at: updatedAtValue,
     };
 
     try {
@@ -501,14 +505,9 @@ export default function CardDetailPage() {
                 </label>
                 <label className="form-field">
                   is_edit
-                  <input
-                    className="form-input"
-                    type="number"
-                    value={detailForm?.is_edited ?? ""}
-                    onChange={(event) =>
-                      handleDetailChange("is_edited", event.target.value)
-                    }
-                  />
+                  <span className="form-static">
+                    {detailForm?.is_edited !== "" ? detailForm?.is_edited : "-"}
+                  </span>
                 </label>
                 <label className="form-field">
                   card_role_id
@@ -545,23 +544,15 @@ export default function CardDetailPage() {
                 </label>
                 <label className="form-field">
                   created_at
-                  <input
-                    className="form-input"
-                    value={detailForm?.created_at ?? ""}
-                    onChange={(event) =>
-                      handleDetailChange("created_at", event.target.value)
-                    }
-                  />
+                  <span className="form-static">
+                    {detailForm?.created_at || "-"}
+                  </span>
                 </label>
                 <label className="form-field">
                   updated_at
-                  <input
-                    className="form-input"
-                    value={detailForm?.updated_at ?? ""}
-                    onChange={(event) =>
-                      handleDetailChange("updated_at", event.target.value)
-                    }
-                  />
+                  <span className="form-static">
+                    {detailForm?.updated_at || "-"}
+                  </span>
                 </label>
               </div>
               <div className="inline-actions">

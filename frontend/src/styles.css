@@ -370,6 +370,18 @@ button.secondary {
   font-size: 14px;
 }
 
+.form-static {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #1f2937;
+  font-size: 14px;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
 .form-textarea {
   padding: 8px 10px;
   border-radius: 8px;
