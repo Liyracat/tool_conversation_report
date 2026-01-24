@@ -702,8 +702,8 @@ def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]
     message_id = 0
     text_id = 0
     for line in split_text(raw_text):
-        if line in speaker_map:
-            current_speaker = speaker_map[line]
+        if line.replace(":","") in speaker_map:
+            current_speaker = speaker_map[line.replace(":","")]
             message_id += 1
             text_id = 0
             continue
