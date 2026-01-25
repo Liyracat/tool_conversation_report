@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
+import sys
 import time
 import urllib.error
 import urllib.request
 from typing import Any, Optional
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
 from app.db import db_session
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "gpt-oss:20b"
+logger = logging.getLogger(__name__)
 
 
 def fetch_one(conn, query: str, params: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -192,7 +201,10 @@ def call_ollama(prompt: str) -> dict[str, Any]:
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    logger.info("Ollama request prompt: %s", prompt)
+    with urllib.request.urlopen(req, timeout=300000) as resp:
+        body = resp.read().decode("utf-8")
+        logger.info("Ollama response status=%s body=%s", resp.status, body)
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -293,7 +305,7 @@ def process_card_role_job(conn, job: dict[str, Any], allowed_terms: str) -> None
     matched_name = extract_best_match(response_text, role_names)
     confidence = extract_min_confidence(response_text)
     if matched_name is None or confidence is None:
-        mark_job_failed(conn, job["job_id"], "Failed to parse response")
+        mark_job_failed(conn, job["job_id"], "Failed to parse response: "+response_text)
         return
 
     matched_role_id = next(
@@ -365,7 +377,7 @@ def process_link_suggestion_job(conn, job: dict[str, Any], allowed_terms: str) -
     first_line = lines[0].lower() if lines else ""
     confidence = extract_min_confidence(response_text)
     if confidence is None:
-        mark_job_failed(conn, job["job_id"], "Failed to parse confidence")
+        mark_job_failed(conn, job["job_id"], "Failed to parse confidence: "+response_text)
         return
 
     link_kinds = fetch_all(
@@ -381,7 +393,7 @@ def process_link_suggestion_job(conn, job: dict[str, Any], allowed_terms: str) -
             row["link_kind_id"] for row in link_kinds if row["link_kind_name"] == matched_name
         )
     elif first_line != "none":
-        mark_job_failed(conn, job["job_id"], "Failed to parse link kind")
+        mark_job_failed(conn, job["job_id"], "Failed to parse link kind: "+response_text)
         return
 
     conn.execute(
