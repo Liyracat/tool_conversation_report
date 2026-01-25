@@ -997,16 +997,19 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
 @app.post("/link-suggestions/{suggestion_id}/reject")
 async def reject_link_suggestion(suggestion_id: int) -> dict:
     with db_session() as conn:
-        deleted = conn.execute(
+        updated = conn.execute(
             """
-            DELETE FROM link_suggestions
+            UPDATE link_suggestions
+            SET status = 'rejected',
+                expires_at = datetime('now', '+7 days'),
+                updated_at = CURRENT_TIMESTAMP
             WHERE suggestion_id = :suggestion_id;
             """,
             {"suggestion_id": suggestion_id},
         ).rowcount
-    if deleted == 0:
+    if updated == 0:
         raise HTTPException(status_code=404, detail="Suggestion not found")
-    return {"deleted": True}
+    return {"updated": True}
 
 
 @app.post("/link-suggestions/cleanup")
