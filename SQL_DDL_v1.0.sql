@@ -199,3 +199,51 @@ CREATE INDEX IF NOT EXISTS idx_link_suggestions_kind_conf
 -- 期限切れ掃除用
 CREATE INDEX IF NOT EXISTS idx_link_suggestions_expires_at
   ON link_suggestions(expires_at);
+
+-- =========================
+-- llm_jobs
+-- =========================
+
+CREATE TABLE llm_jobs (
+    job_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    -- ジョブ種別（処理内容）
+    job_type TEXT NOT NULL
+        CHECK (job_type IN ('card_role', 'link_suggestion')),
+
+    -- 対象データ
+    target_table TEXT NOT NULL
+        CHECK (target_table IN ('cards', 'link_suggestions')),
+    target_id INTEGER NOT NULL,
+
+    -- 状態管理
+    status TEXT NOT NULL
+        CHECK (status IN ('queued', 'processing', 'success', 'failed'))
+        DEFAULT 'queued',
+
+    -- ロック・進捗
+    locked_at TEXT,          -- processing にした時刻
+    lock_owner TEXT,         -- worker識別子（任意）
+    started_at TEXT,         -- 実処理開始
+    finished_at TEXT,        -- 成功 or 失敗確定
+
+    -- エラー情報（failed時のみ）
+    error TEXT,
+
+    -- メタ情報（将来用・任意）
+    result_json TEXT,        -- モデル名、推論時間など入れたくなったら
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- 同一対象への二重投入を防ぐ（必要なら）
+CREATE UNIQUE INDEX idx_llm_jobs_unique_target
+ON llm_jobs (job_type, target_table, target_id);
+
+-- キュー取得高速化
+CREATE INDEX idx_llm_jobs_queue
+ON llm_jobs (status, created_at);
+
+-- processing 回収用
+CREATE INDEX idx_llm_jobs_processing
+ON llm_jobs (status, locked_at);
