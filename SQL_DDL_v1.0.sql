@@ -204,7 +204,7 @@ CREATE INDEX IF NOT EXISTS idx_link_suggestions_expires_at
 -- llm_jobs
 -- =========================
 
-CREATE TABLE llm_jobs (
+CREATE TABLE IF NOT EXISTS llm_jobs (
     job_id INTEGER PRIMARY KEY AUTOINCREMENT,
 
     -- ジョブ種別（処理内容）
@@ -240,16 +240,16 @@ CREATE TABLE llm_jobs (
 );
 
 -- 同一対象への二重投入を防ぐ（必要なら）
-CREATE UNIQUE INDEX idx_llm_jobs_unique_target
-ON llm_jobs (job_type, target_table, target_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_jobs_unique_target
+ON llm_jobs (job_type, target_table, target_id);␊
 
 -- キュー取得高速化
-CREATE INDEX idx_llm_jobs_queue
-ON llm_jobs (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_llm_jobs_queue
+ON llm_jobs (status, created_at);␊
 
 -- processing 回収用
-CREATE INDEX idx_llm_jobs_processing
-ON llm_jobs (status, locked_at);
+CREATE INDEX IF NOT EXISTS idx_llm_jobs_processing
+ON llm_jobs (status, locked_at);␊
 
 -- 期限切れ掃除用
 CREATE INDEX IF NOT EXISTS idx_llm_jobs_expires_at
