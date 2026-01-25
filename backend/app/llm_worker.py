@@ -207,10 +207,8 @@ def call_ollama(prompt: str) -> dict[str, Any]:
         "stream": False,
         "options": {
             "temperature": 0,
-            "num_predict": 12,
             "top_p": 0.8,
             "repeat_penalty": 1.1,
-            "stop": ["\n\n"],
         },
     }
     req = urllib.request.Request(
