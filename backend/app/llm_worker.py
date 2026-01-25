@@ -20,6 +20,24 @@ from app.db import db_session
 OLLAMA_URL = "http://localhost:11434/api/generate"
 MODEL_NAME = "gpt-oss:20b"
 logger = logging.getLogger(__name__)
+LOG_PATH = os.path.join(CURRENT_DIR, "llm_worker.log")
+
+
+def configure_logger() -> None:
+    if logger.handlers:
+        return
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
+    file_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    logger.propagate = False
+
+
+configure_logger()
 
 
 def fetch_one(conn, query: str, params: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -205,7 +223,7 @@ def call_ollama(prompt: str) -> dict[str, Any]:
     with urllib.request.urlopen(req, timeout=300000) as resp:
         body = resp.read().decode("utf-8")
         logger.info("Ollama response status=%s body=%s", resp.status, body)
-        return json.loads(resp.read().decode("utf-8"))
+        return json.loads(body)
 
 
 def fetch_processing_job(conn) -> Optional[dict[str, Any]]:
