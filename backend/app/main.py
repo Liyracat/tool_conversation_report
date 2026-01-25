@@ -940,7 +940,7 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
         suggestion = fetch_one(
             conn,
             """
-            SELECT from_card_id, to_card_id, suggested_link_kind_id, suggested_confidence
+            SELECT from_card_id, to_card_id, suggested_link_kind_id, suggested_confidence, status
             FROM link_suggestions
             WHERE suggestion_id = :suggestion_id;
             """,
@@ -949,56 +949,62 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
         if not suggestion:
             raise HTTPException(status_code=404, detail="Suggestion not found")
         kind_id = payload.link_kind_id or suggestion["suggested_link_kind_id"]
+        link_id = None
         if kind_id is None:
-            raise HTTPException(status_code=400, detail="link_kind_id is required")
-        existing_link = fetch_one(
-            conn,
-            """
-            SELECT link_id
-            FROM card_links
-            WHERE from_card_id = :from_card_id
-              AND to_card_id = :to_card_id
-            ORDER BY updated_at DESC
-            LIMIT 1;
-            """,
-            {
-                "from_card_id": suggestion["from_card_id"],
-                "to_card_id": suggestion["to_card_id"],
-            },
-        )
-        if existing_link:
-            conn.execute(
-                """
-                UPDATE card_links
-                SET link_kind_id = :link_kind_id,
-                    confidence = :confidence,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE link_id = :link_id;
-                """,
-                {
-                    "link_kind_id": kind_id,
-                    "confidence": suggestion["suggested_confidence"],
-                    "link_id": existing_link["link_id"],
-                },
-            )
-            link_id = existing_link["link_id"]
+            if not (
+                suggestion["status"] == "success"
+                and suggestion["suggested_link_kind_id"] is None
+            ):
+                raise HTTPException(status_code=400, detail="link_kind_id is required")
         else:
-            cur = conn.execute(
+            existing_link = fetch_one(
+                conn,
                 """
-                INSERT INTO card_links (
-                  link_kind_id, from_card_id, to_card_id, confidence, created_at, updated_at
-                ) VALUES (
-                  :link_kind_id, :from_card_id, :to_card_id, :confidence, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                );
+                SELECT link_id
+                FROM card_links
+                WHERE from_card_id = :from_card_id
+                  AND to_card_id = :to_card_id
+                ORDER BY updated_at DESC
+                LIMIT 1;
                 """,
                 {
-                    "link_kind_id": kind_id,
                     "from_card_id": suggestion["from_card_id"],
                     "to_card_id": suggestion["to_card_id"],
-                    "confidence": suggestion["suggested_confidence"],
                 },
             )
-            link_id = cur.lastrowid
+            if existing_link:
+                conn.execute(
+                    """
+                    UPDATE card_links
+                    SET link_kind_id = :link_kind_id,
+                        confidence = :confidence,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE link_id = :link_id;
+                    """,
+                    {
+                        "link_kind_id": kind_id,
+                        "confidence": suggestion["suggested_confidence"],
+                        "link_id": existing_link["link_id"],
+                    },
+                )
+                link_id = existing_link["link_id"]
+            else:
+                cur = conn.execute(
+                    """
+                    INSERT INTO card_links (
+                      link_kind_id, from_card_id, to_card_id, confidence, created_at, updated_at
+                    ) VALUES (
+                      :link_kind_id, :from_card_id, :to_card_id, :confidence, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    );
+                    """,
+                    {
+                        "link_kind_id": kind_id,
+                        "from_card_id": suggestion["from_card_id"],
+                        "to_card_id": suggestion["to_card_id"],
+                        "confidence": suggestion["suggested_confidence"],
+                    },
+                )
+                link_id = cur.lastrowid
         conn.execute(
             """
             UPDATE link_suggestions
