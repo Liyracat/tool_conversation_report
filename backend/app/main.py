@@ -1,13 +1,15 @@
 from __future__ import annotations
 
-import uuid
+import logging
 import sqlite3
+import uuid
 from typing import Any, Dict, Iterable, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import db_session, init_db
+from app.logging_config import configure_logging
 from app.schemas import (
     CardDetail,
     CardListItem,
@@ -37,6 +39,8 @@ from app.schemas import (
 )
 
 app = FastAPI(title="Conversation Cards API")
+configure_logging()
+logger = logging.getLogger(__name__)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +49,20 @@ app.add_middleware(
     allow_methods=["*"] ,
     allow_headers=["*"] ,
 )
+
+
+@app.middleware("http")
+async def log_request_start(request, call_next):
+    logger.info("API start %s %s", request.method, request.url.path)
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception(
+            "Unhandled error during request %s %s",
+            request.method,
+            request.url.path,
+        )
+        raise
 
 
 @app.on_event("startup")

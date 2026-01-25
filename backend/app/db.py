@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -10,6 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR.parent
 DB_PATH = BASE_DIR / "app.db"
 SCHEMA_PATH = REPO_ROOT / "SQL_DDL_v1.0.sql"
+SQL_LOGGER = logging.getLogger("app.sql")
 
 
 def resolve_schema_path() -> Path:
@@ -31,6 +33,8 @@ def get_db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
+    if SQL_LOGGER.hasHandlers():
+        conn.set_trace_callback(lambda stmt: SQL_LOGGER.info("SQL start: %s", stmt))
     return conn
 
 
