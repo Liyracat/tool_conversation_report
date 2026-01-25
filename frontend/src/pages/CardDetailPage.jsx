@@ -11,6 +11,11 @@ export default function CardDetailPage() {
   const [contextMerges, setContextMerges] = useState([]);
   const [contextSplits, setContextSplits] = useState([]);
   const [links, setLinks] = useState([]);
+  const [linkFilters, setLinkFilters] = useState({
+    kindKeyword: "",
+    contentKeyword: "",
+    sortDir: "desc",
+  });
   const [detailForm, setDetailForm] = useState(null);
   const [saveState, setSaveState] = useState({ status: "idle", message: "" });
   const [contextSaveState, setContextSaveState] = useState({
@@ -68,10 +73,18 @@ export default function CardDetailPage() {
       }
     };
 
+    loadCard();
+  }, [cardId]);
+
+  useEffect(() => {
     const loadLinks = async () => {
       if (!cardId) return;
       try {
-        const res = await fetch(`${apiBase}/cards/${cardId}/links`);
+        const params = new URLSearchParams({
+          sort_by: "conversation_at",
+          sort_dir: linkFilters.sortDir,
+        });
+        const res = await fetch(`${apiBase}/cards/${cardId}/links?${params}`);
         const data = await res.json();
         setLinks(data.items || []);
       } catch (error) {
@@ -79,9 +92,8 @@ export default function CardDetailPage() {
       }
     };
 
-    loadCard();
     loadLinks();
-  }, [cardId]);
+  }, [cardId, linkFilters.sortDir]);
 
   useEffect(() => {
     document.querySelectorAll(".context-textarea").forEach(resizeTextarea);
@@ -108,6 +120,20 @@ export default function CardDetailPage() {
     const parsed = Number(value);
     return Number.isNaN(parsed) ? null : parsed;
   };
+
+  const handleLinkFilterChange = (field, value) => {
+    setLinkFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const filteredLinks = links.filter((link) => {
+    const kindKeyword = linkFilters.kindKeyword.trim().toLowerCase();
+    const contentKeyword = linkFilters.contentKeyword.trim().toLowerCase();
+    const kindName = (link.link_kind_name ?? "").toLowerCase();
+    const contents = (link.to_card?.contents ?? "").toLowerCase();
+    const kindMatch = !kindKeyword || kindName.includes(kindKeyword);
+    const contentMatch = !contentKeyword || contents.includes(contentKeyword);
+    return kindMatch && contentMatch;
+  });
 
   const handleSave = async () => {
     if (!detailForm) return;
@@ -582,24 +608,65 @@ export default function CardDetailPage() {
         {links.length === 0 ? (
           <p className="empty">関連カードがありません。</p>
         ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>種別</th>
-                <th>内容</th>
-                <th>Confidence</th>
-              </tr>
-            </thead>
-            <tbody>
-              {links.map((link) => (
-                <tr key={link.link_id}>
-                  <td>{link.link_kind_name}</td>
-                  <td>{link.to_card?.contents}</td>
-                  <td>{link.confidence ?? "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <>
+            <div className="form-row">
+              <label className="form-field">
+                種別キーワード
+                <input
+                  className="form-input"
+                  value={linkFilters.kindKeyword}
+                  onChange={(event) =>
+                    handleLinkFilterChange("kindKeyword", event.target.value)
+                  }
+                />
+              </label>
+              <label className="form-field">
+                内容キーワード
+                <input
+                  className="form-input"
+                  value={linkFilters.contentKeyword}
+                  onChange={(event) =>
+                    handleLinkFilterChange("contentKeyword", event.target.value)
+                  }
+                />
+              </label>
+              <label className="form-field">
+                conversation_at 並び順
+                <select
+                  className="form-input"
+                  value={linkFilters.sortDir}
+                  onChange={(event) =>
+                    handleLinkFilterChange("sortDir", event.target.value)
+                  }
+                >
+                  <option value="desc">降順</option>
+                  <option value="asc">昇順</option>
+                </select>
+              </label>
+            </div>
+            {filteredLinks.length === 0 ? (
+              <p className="empty">条件に合う関連カードがありません。</p>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>種別</th>
+                    <th>内容</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredLinks.map((link) => (
+                    <tr key={link.link_id}>
+                      <td>{link.link_kind_name}</td>
+                      <td>{link.to_card?.contents}</td>
+                      <td>{link.confidence ?? "-"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </>
         )}
       </div>
     </div>
