@@ -241,15 +241,15 @@ CREATE TABLE IF NOT EXISTS llm_jobs (
 
 -- 同一対象への二重投入を防ぐ（必要なら）
 CREATE UNIQUE INDEX IF NOT EXISTS idx_llm_jobs_unique_target
-ON llm_jobs (job_type, target_table, target_id);␊
+ON llm_jobs (job_type, target_table, target_id);
 
 -- キュー取得高速化
 CREATE INDEX IF NOT EXISTS idx_llm_jobs_queue
-ON llm_jobs (status, created_at);␊
+ON llm_jobs (status, created_at);
 
 -- processing 回収用
 CREATE INDEX IF NOT EXISTS idx_llm_jobs_processing
-ON llm_jobs (status, locked_at);␊
+ON llm_jobs (status, locked_at);
 
 -- 期限切れ掃除用
 CREATE INDEX IF NOT EXISTS idx_llm_jobs_expires_at
