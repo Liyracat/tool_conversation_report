@@ -739,19 +739,32 @@ async def import_preview(payload: ImportPreviewRequest) -> ImportPreviewResponse
 async def import_commit(payload: ImportCommitRequest) -> dict:
     created_ids: list[int] = []
     with db_session() as conn:
+        meaningless_rows = fetch_all(
+            conn,
+            "SELECT phrase, card_role_id FROM meaningless_phrases ORDER BY meaningless_id",
+            {},
+        )
+        meaningless_map: dict[str, int] = {}
+        for row in meaningless_rows:
+            phrase = row["phrase"]
+            if phrase not in meaningless_map:
+                meaningless_map[phrase] = row["card_role_id"]
         for part in payload.parts:
             split_key = part["text_id"]
+            matched_role_id = meaningless_map.get(part["contents"])
             cur = conn.execute(
                 """
                 INSERT INTO cards (
                   thread_id, message_id, text_id, split_key, split_version,
                   speaker_id, conversation_at,
                   contents, is_edited, visibility,
+                  card_role_id, card_role_confidence,
                   created_at, updated_at
                 ) VALUES (
                   :thread_id, :message_id, :text_id, :split_key, :split_version,
                   :speaker_id, CURRENT_TIMESTAMP,
                   :contents, 0, 'normal',
+                  :card_role_id, :card_role_confidence,
                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 );
                 """,
@@ -763,6 +776,8 @@ async def import_commit(payload: ImportCommitRequest) -> dict:
                     "split_version": 1,
                     "speaker_id": part["speaker_id"],
                     "contents": part["contents"],
+                    "card_role_id": matched_role_id,
+                    "card_role_confidence": 0.8,
                 },
             )
             created_ids.append(cur.lastrowid)
@@ -786,9 +801,9 @@ async def generate_link_suggestions(payload: LinkSuggestionGenerateRequest) -> d
                 row = conn.execute(
                     """
                     INSERT OR IGNORE INTO link_suggestions (
-                      from_card_id, to_card_id, status, attempts, created_at, updated_at
+                      from_card_id, to_card_id, status, created_at, updated_at
                     ) VALUES (
-                      :from_card_id, :to_card_id, 'queued', 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                      :from_card_id, :to_card_id, 'queued', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                     );
                     """,
                     {"from_card_id": from_id, "to_card_id": to_id},
@@ -840,11 +855,32 @@ async def list_link_suggestions(
             conn,
             f"""
             SELECT
-              ls.suggestion_id, ls.from_card_id, ls.to_card_id, ls.status,
-              ls.suggested_link_kind_id,
+              ls.suggestion_id, ls.from_card_id, ls.to_card_id,
+              c_from.contents AS from_card_contents,
+              c_to.contents AS to_card_contents,
+              (
+                SELECT lk2.link_kind_name
+                FROM card_links cl2
+                LEFT JOIN link_kinds lk2 ON lk2.link_kind_id = cl2.link_kind_id
+                WHERE cl2.from_card_id = ls.from_card_id
+                  AND cl2.to_card_id = ls.to_card_id
+                ORDER BY cl2.updated_at DESC
+                LIMIT 1
+              ) AS existing_link_kind_name,
+              (
+                SELECT cl3.confidence
+                FROM card_links cl3
+                WHERE cl3.from_card_id = ls.from_card_id
+                  AND cl3.to_card_id = ls.to_card_id
+                ORDER BY cl3.updated_at DESC
+                LIMIT 1
+              ) AS existing_link_confidence,
+              ls.status, ls.suggested_link_kind_id,
               lk.link_kind_name AS suggested_link_kind_name,
               ls.suggested_confidence
             FROM link_suggestions ls
+            LEFT JOIN cards c_from ON c_from.card_id = ls.from_card_id
+            LEFT JOIN cards c_to ON c_to.card_id = ls.to_card_id
             LEFT JOIN link_kinds lk ON lk.link_kind_id = ls.suggested_link_kind_id
             WHERE 1=1
               AND (:status IS NULL OR ls.status = :status)

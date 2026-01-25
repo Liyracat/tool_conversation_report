@@ -146,6 +146,10 @@ class LinkSuggestionListItem(BaseModel):
     suggestion_id: int
     from_card_id: int
     to_card_id: int
+    from_card_contents: Optional[str] = None
+    to_card_contents: Optional[str] = None
+    existing_link_kind_name: Optional[str] = None
+    existing_link_confidence: Optional[float] = None
     status: str
     suggested_link_kind_id: Optional[int]
     suggested_link_kind_name: Optional[str]
