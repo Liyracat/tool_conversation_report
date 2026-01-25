@@ -320,7 +320,7 @@ export default function CardDetailPage() {
       </div>
 
       <div className="section">
-        <details className="accordion" close>
+        <details className="accordion">
           <summary>前後メッセージ</summary>
           <div className="accordion-body">
             {contextEdits.length === 0 ? (
@@ -417,7 +417,7 @@ export default function CardDetailPage() {
       </div>
 
       <div className="section">
-        <details className="accordion" close>
+        <details className="accordion">
           <summary>詳細</summary>
           <div className="accordion-body">
             <div className="settings-form">
