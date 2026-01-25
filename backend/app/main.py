@@ -933,21 +933,54 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
         kind_id = payload.link_kind_id or suggestion["suggested_link_kind_id"]
         if kind_id is None:
             raise HTTPException(status_code=400, detail="link_kind_id is required")
-        conn.execute(
+        existing_link = fetch_one(
+            conn,
             """
-            INSERT INTO card_links (
-              link_kind_id, from_card_id, to_card_id, confidence, created_at, updated_at
-            ) VALUES (
-              :link_kind_id, :from_card_id, :to_card_id, :confidence, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-            );
+            SELECT link_id
+            FROM card_links
+            WHERE from_card_id = :from_card_id
+              AND to_card_id = :to_card_id
+            ORDER BY updated_at DESC
+            LIMIT 1;
             """,
             {
-                "link_kind_id": kind_id,
                 "from_card_id": suggestion["from_card_id"],
                 "to_card_id": suggestion["to_card_id"],
-                "confidence": suggestion["suggested_confidence"],
             },
         )
+        if existing_link:
+            conn.execute(
+                """
+                UPDATE card_links
+                SET link_kind_id = :link_kind_id,
+                    confidence = :confidence,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE link_id = :link_id;
+                """,
+                {
+                    "link_kind_id": kind_id,
+                    "confidence": suggestion["suggested_confidence"],
+                    "link_id": existing_link["link_id"],
+                },
+            )
+            link_id = existing_link["link_id"]
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO card_links (
+                  link_kind_id, from_card_id, to_card_id, confidence, created_at, updated_at
+                ) VALUES (
+                  :link_kind_id, :from_card_id, :to_card_id, :confidence, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                );
+                """,
+                {
+                    "link_kind_id": kind_id,
+                    "from_card_id": suggestion["from_card_id"],
+                    "to_card_id": suggestion["to_card_id"],
+                    "confidence": suggestion["suggested_confidence"],
+                },
+            )
+            link_id = cur.lastrowid
         conn.execute(
             """
             UPDATE link_suggestions
@@ -958,26 +991,22 @@ async def approve_link_suggestion(suggestion_id: int, payload: LinkSuggestionApp
             """,
             {"suggestion_id": suggestion_id},
         )
-    link_id = conn.execute("SELECT last_insert_rowid()")
-    return {"link_id": link_id.fetchone()[0]}
+    return {"link_id": link_id}
 
 
 @app.post("/link-suggestions/{suggestion_id}/reject")
 async def reject_link_suggestion(suggestion_id: int) -> dict:
     with db_session() as conn:
-        updated = conn.execute(
+        deleted = conn.execute(
             """
-            UPDATE link_suggestions
-            SET status = 'rejected',
-                expires_at = datetime('now', '+7 days'),
-                updated_at = CURRENT_TIMESTAMP
+            DELETE FROM link_suggestions
             WHERE suggestion_id = :suggestion_id;
             """,
             {"suggestion_id": suggestion_id},
         ).rowcount
-    if updated == 0:
+    if deleted == 0:
         raise HTTPException(status_code=404, detail="Suggestion not found")
-    return {"rejected": True}
+    return {"deleted": True}
 
 
 @app.post("/link-suggestions/cleanup")
