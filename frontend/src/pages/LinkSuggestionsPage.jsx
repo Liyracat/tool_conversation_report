@@ -66,6 +66,37 @@ export default function LinkSuggestionsPage() {
       .catch(() => loadSuggestions());
   };
 
+  const handleRerun = (suggestionId) => {
+    fetch(`${apiBase}/link-suggestions/${suggestionId}/rerun`, {
+      method: "POST",
+    })
+      .then(() => loadSuggestions())
+      .catch(() => loadSuggestions());
+  };
+
+  const handleApprove = (suggestion) => {
+    const payload = suggestion.suggested_link_kind_id
+      ? { link_kind_id: suggestion.suggested_link_kind_id }
+      : {};
+    fetch(`${apiBase}/link-suggestions/${suggestion.suggestion_id}/approve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    })
+      .then(() => loadSuggestions())
+      .catch(() => loadSuggestions());
+  };
+
+  const handleReject = (suggestionId) => {
+    fetch(`${apiBase}/link-suggestions/${suggestionId}/reject`, {
+      method: "POST",
+    })
+      .then(() => loadSuggestions())
+      .catch(() => loadSuggestions());
+  };
+
   const visibleStatuses = new Set(["queued", "processing", "success", "failed"]);
   const visibleSuggestions = suggestions.filter((item) => visibleStatuses.has(item.status));
   const summarizeContents = (contents) => {
@@ -201,16 +232,28 @@ export default function LinkSuggestionsPage() {
                   <td>
                     <div className="inline-actions">
                       {item.status === "failed" && (
-                        <button type="button" className="secondary">
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => handleRerun(item.suggestion_id)}
+                        >
                           再実行
                         </button>
                       )}
                       {item.status === "success" && (
                         <>
-                          <button type="button" className="secondary">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => handleApprove(item)}
+                          >
                             承認
                           </button>
-                          <button type="button" className="secondary">
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => handleReject(item.suggestion_id)}
+                          >
                             却下
                           </button>
                         </>
