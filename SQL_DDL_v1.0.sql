@@ -233,7 +233,10 @@ CREATE TABLE llm_jobs (
     -- メタ情報（将来用・任意）
     result_json TEXT,        -- モデル名、推論時間など入れたくなったら
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+
+    -- 1週間後に掃除したいならこれを使う（NULLなら対象外）
+    expires_at        TEXT
 );
 
 -- 同一対象への二重投入を防ぐ（必要なら）
@@ -247,3 +250,7 @@ ON llm_jobs (status, created_at);
 -- processing 回収用
 CREATE INDEX idx_llm_jobs_processing
 ON llm_jobs (status, locked_at);
+
+-- 期限切れ掃除用
+CREATE INDEX IF NOT EXISTS idx_llm_jobs_expires_at
+  ON llm_jobs(expires_at);
