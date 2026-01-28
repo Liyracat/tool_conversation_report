@@ -776,6 +776,24 @@ def _split_speaker_text(text: str, *, allow_overlap: bool) -> list[str]:
     return parts
 
 
+def _merge_short_segments(segments: list[str], *, min_len: int) -> list[str]:
+    if not segments:
+        return []
+    merged: list[str] = []
+    buffer = ""
+    for segment in segments:
+        if buffer:
+            buffer = f"{buffer}\n{segment}"
+        else:
+            buffer = segment
+        if len(buffer) >= min_len:
+            merged.append(buffer)
+            buffer = ""
+    if buffer:
+        merged.append(buffer)
+    return merged
+
+
 def _split_import_blocks(raw_text: str, speaker_map: dict[str, dict]) -> list[tuple[dict, str]]:
     normalized = _normalize_import_text(raw_text)
     lines = normalized.split("\n")
@@ -820,7 +838,9 @@ def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]
     for speaker, text in _split_import_blocks(raw_text, speaker_map):
         message_id += 1
         text_id = 0
-        for segment in _split_speaker_text(text, allow_overlap=True):
+        segments = _split_speaker_text(text, allow_overlap=True)
+        segments = _merge_short_segments(segments, min_len=300)
+        for segment in segments:
             text_id += 1
             parts.append(
                 {
