@@ -710,8 +710,67 @@ async def delete_link(link_id: int) -> Response:
     return Response(status_code=204)
 
 
-def split_text(raw_text: str) -> list[str]:
-    return [line.strip() for line in raw_text.splitlines() if line.strip()]
+_IMPORT_DELIM_PATTERN = re.compile(r"(。|！　|？　|♪　|[a-z]\. |\)\. |\.\" |! |\? )")
+
+
+def _normalize_import_text(raw_text: str) -> str:
+    return raw_text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _find_first_delim_end(text: str, start: int) -> Optional[int]:
+    match = _IMPORT_DELIM_PATTERN.search(text, pos=start)
+    return match.end() if match else None
+
+
+def _find_first_double_newline(text: str, start: int) -> Optional[int]:
+    idx = text.find("\n\n", start)
+    return idx if idx != -1 else None
+
+
+def _split_speaker_text(text: str) -> list[str]:
+    parts: list[str] = []
+    text_len = len(text)
+    start = 0
+    prev_end = 0
+    while start < text_len:
+        while start < text_len and text[start].isspace():
+            start += 1
+        if start >= text_len:
+            break
+        search_from = max(start, prev_end)
+        next_delim = _find_first_delim_end(text, search_from)
+        next_double = _find_first_double_newline(text, search_from)
+
+        end: Optional[int] = None
+        if next_delim is not None and (next_delim - start) <= 450:
+            end = next_delim
+        else:
+            if next_double is not None and (next_double - start) >= 200:
+                end = next_double
+            elif next_delim is not None:
+                end = next_delim
+            else:
+                end = start + 600 if (start + 600) < text_len else text_len
+
+        if end <= prev_end:
+            end = min(prev_end + 1, text_len)
+
+        segment = text[start:end].strip()
+        if segment:
+            parts.append(segment)
+
+        prev_end = end
+        if prev_end >= text_len:
+            break
+
+        overlap_start = max(0, prev_end - 80)
+        overlap_delim = _find_first_delim_end(text, overlap_start)
+        if overlap_delim is not None and overlap_delim < prev_end:
+            start = overlap_delim
+        else:
+            start = prev_end
+
+    return parts
 
 
 def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]:
