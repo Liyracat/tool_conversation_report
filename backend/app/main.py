@@ -743,10 +743,10 @@ def _split_speaker_text(text: str, *, allow_overlap: bool) -> list[str]:
         next_double = _find_first_double_newline(text, search_from)
 
         end: Optional[int] = None
-        if next_delim is not None and (next_delim - start) <= 450:
+        if next_delim is not None and (next_delim - start) >= 450:
             end = next_delim
         else:
-            if next_double is not None and (next_double - start) >= 200:
+            if next_double is not None and (next_double - start) >= 300:
                 end = next_double
             elif next_delim is not None and (next_delim - start) > 450:
                 end = next_delim if (next_delim - start) <= 600 else None
