@@ -728,7 +728,7 @@ def _find_first_double_newline(text: str, start: int) -> Optional[int]:
     return idx if idx != -1 else None
 
 
-def _split_speaker_text(text: str) -> list[str]:
+def _split_speaker_text(text: str, *, allow_overlap: bool) -> list[str]:
     parts: list[str] = []
     text_len = len(text)
     start = 0
@@ -738,7 +738,7 @@ def _split_speaker_text(text: str) -> list[str]:
             start += 1
         if start >= text_len:
             break
-        search_from = max(start, prev_end)
+        search_from = max(start, prev_end) if allow_overlap else start
         next_delim = _find_first_delim_end(text, search_from)
         next_double = _find_first_double_newline(text, search_from)
 
@@ -748,13 +748,14 @@ def _split_speaker_text(text: str) -> list[str]:
         else:
             if next_double is not None and (next_double - start) >= 200:
                 end = next_double
-            elif next_delim is not None:
-                end = next_delim
-            else:
-                end = start + 600 if (start + 600) < text_len else text_len
+            elif next_delim is not None and (next_delim - start) > 450:
+                end = next_delim if (next_delim - start) <= 600 else None
 
-        if end <= prev_end:
-            end = min(prev_end + 1, text_len)
+        if end is None:
+            end = start + 600 if (start + 600) < text_len else text_len
+
+        if end <= start:
+            end = min(start + 1, text_len)
 
         segment = text[start:end].strip()
         if segment:
@@ -764,60 +765,72 @@ def _split_speaker_text(text: str) -> list[str]:
         if prev_end >= text_len:
             break
 
-        overlap_start = max(0, prev_end - 80)
-        overlap_delim = _find_first_delim_end(text, overlap_start)
-        if overlap_delim is not None and overlap_delim < prev_end:
-            start = overlap_delim
-        else:
-            start = prev_end
+        if allow_overlap:
+            overlap_start = max(0, prev_end - 80)
+            overlap_delim = _find_first_delim_end(text, overlap_start)
+            if overlap_delim is not None and overlap_delim < prev_end:
+                start = overlap_delim
+                continue
+        start = prev_end
 
     return parts
 
 
-def split_text(raw_text: str) -> list[str]:
+def _split_import_blocks(raw_text: str, speaker_map: dict[str, dict]) -> list[tuple[dict, str]]:
     normalized = _normalize_import_text(raw_text)
     lines = normalized.split("\n")
-    parts: list[str] = []
+    blocks: list[tuple[dict, str]] = []
+    current_speaker: Optional[dict] = None
+    current_lines: list[str] = []
+
+    def flush_block() -> None:
+        nonlocal current_lines
+        if current_speaker is None:
+            return
+        text = "\n".join(current_lines).strip()
+        if text:
+            blocks.append((current_speaker, text))
+        current_lines = []
+
     for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            continue
-        normalized_line = stripped.replace("：", ":")
-        if ":" in normalized_line:
-            speaker_label, remainder = normalized_line.split(":", 1)
-            if speaker_label:
-                parts.append(f"{speaker_label}:")
-                remainder = remainder.strip()
+        normalized_line = line.strip().replace("：", ":")
+        if normalized_line:
+            speaker_label, remainder = normalized_line.split(":", 1) if ":" in normalized_line else (None, None)
+            if speaker_label and speaker_label in speaker_map:
+                flush_block()
+                current_speaker = speaker_map[speaker_label]
+                remainder = remainder.strip() if remainder else ""
                 if remainder:
-                    parts.extend(_split_speaker_text(remainder))
+                    current_lines.append(remainder)
                 continue
-        parts.extend(_split_speaker_text(normalized_line))
-    return parts
+        if current_speaker is None:
+            if not normalized_line:
+                continue
+            raise HTTPException(status_code=400, detail="Speaker definition line is required before content.")
+        current_lines.append(line.rstrip())
+
+    flush_block()
+    return blocks
 
 
 def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]:
     parts: list[dict] = []
-    current_speaker: Optional[dict] = None
     message_id = 0
     text_id = 0
-    for line in split_text(raw_text):
-        if line.replace(":","") in speaker_map:
-            current_speaker = speaker_map[line.replace(":","")]
-            message_id += 1
-            text_id = 0
-            continue
-        if current_speaker is None:
-            raise HTTPException(status_code=400, detail="Speaker definition line is required before content.")
-        text_id += 1
-        parts.append(
-            {
-                "message_id": message_id,
-                "text_id": text_id,
-                "speaker_id": current_speaker["speaker_id"],
-                "speaker_name": current_speaker["speaker_name"],
-                "contents": line,
-            }
-        )
+    for speaker, text in _split_import_blocks(raw_text, speaker_map):
+        message_id += 1
+        text_id = 0
+        for segment in _split_speaker_text(text, allow_overlap=True):
+            text_id += 1
+            parts.append(
+                {
+                    "message_id": message_id,
+                    "text_id": text_id,
+                    "speaker_id": speaker["speaker_id"],
+                    "speaker_name": speaker["speaker_name"],
+                    "contents": segment,
+                }
+            )
     return parts
 
 
