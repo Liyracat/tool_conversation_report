@@ -739,17 +739,21 @@ def _split_speaker_text(text: str, *, allow_overlap: bool) -> list[str]:
         if start >= text_len:
             break
         search_from = max(start, prev_end) if allow_overlap else start
-        next_delim = _find_first_delim_end(text, search_from)
-        next_double = _find_first_double_newline(text, search_from)
+        min_double_start = start + 300
+        double_search_from = max(search_from, min_double_start)
+        next_double = _find_first_double_newline(text, double_search_from)
+
+        next_delim = None
+        min_delim_start = start + 450
+        if text_len > min_delim_start:
+            delim_search_from = max(search_from, min_delim_start)
+            next_delim = _find_first_delim_end(text, delim_search_from)
 
         end: Optional[int] = None
-        if next_delim is not None and (next_delim - start) >= 450:
+        if next_double is not None:
+            end = next_double
+        elif next_delim is not None:
             end = next_delim
-        else:
-            if next_double is not None and (next_double - start) >= 300:
-                end = next_double
-            elif next_delim is not None and (next_delim - start) > 450:
-                end = next_delim if (next_delim - start) <= 600 else None
 
         if end is None:
             end = start + 600 if (start + 600) < text_len else text_len
