@@ -774,6 +774,27 @@ def _split_speaker_text(text: str) -> list[str]:
     return parts
 
 
+def split_text(raw_text: str) -> list[str]:
+    normalized = _normalize_import_text(raw_text)
+    lines = normalized.split("\n")
+    parts: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        normalized_line = stripped.replace("：", ":")
+        if ":" in normalized_line:
+            speaker_label, remainder = normalized_line.split(":", 1)
+            if speaker_label:
+                parts.append(f"{speaker_label}:")
+                remainder = remainder.strip()
+                if remainder:
+                    parts.extend(_split_speaker_text(remainder))
+                continue
+        parts.extend(_split_speaker_text(normalized_line))
+    return parts
+
+
 def split_import_text(raw_text: str, speaker_map: dict[str, dict]) -> list[dict]:
     parts: list[dict] = []
     current_speaker: Optional[dict] = None
